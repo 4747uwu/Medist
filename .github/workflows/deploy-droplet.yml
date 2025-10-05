@@ -57,19 +57,14 @@ jobs:
           # Navigate to the project directory
           cd Anish2
           
-          # ✅ Create production environment file using secrets
+          # ✅ Create production environment file using Atlas MongoDB
           cat > .env << 'EOF'
           NODE_ENV=production
-          MONGODB_URI=mongodb://root:${{ secrets.MONGO_ROOT_PASSWORD }}@${{ secrets.DROPLET_HOST }}:27017/Anish?authSource=admin
+          MONGODB_URI=mongodb+srv://pawrangerskyler_db_user:y7zV2rO5KRfPO5Hs@cluster0.ku1pxkx.mongodb.net/Anish?retryWrites=true&w=majority&appName=Cluster0
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           JWT_EXPIRE=30d
           FRONTEND_URL=http://${{ secrets.DROPLET_HOST }}
           MAX_FILE_SIZE=52428800
-          
-          # MongoDB
-          MONGO_ROOT_USERNAME=root
-          MONGO_ROOT_PASSWORD=${{ secrets.MONGO_ROOT_PASSWORD }}
-          MONGO_DB_NAME=Anish
           
           # Email Configuration
           EMAIL_HOST=smtp.gmail.com
@@ -86,10 +81,10 @@ jobs:
           VITE_WS_URL=ws://${{ secrets.DROPLET_HOST }}:5000
           EOF
           
-          # ✅ SAFE: Only stop our project containers
+          # ✅ SAFE: Only stop our project containers (removed mongodb)
           echo "=== Gentle cleanup ==="
-          docker-compose -f docker-compose.prod.yml stop backend frontend mongodb 2>/dev/null || echo "No existing MEDISIST containers to stop"
-          docker-compose -f docker-compose.prod.yml rm -f backend frontend mongodb 2>/dev/null || echo "No existing MEDISIST containers to remove"
+          docker-compose -f docker-compose.prod.yml stop backend frontend 2>/dev/null || echo "No existing MEDISIST containers to stop"
+          docker-compose -f docker-compose.prod.yml rm -f backend frontend 2>/dev/null || echo "No existing MEDISIST containers to remove"
           
           # Build all services
           echo "=== Building MEDISIST services ==="
@@ -121,10 +116,6 @@ jobs:
           # Check health of services
           echo "=== Health Checks ==="
           
-          # Test MongoDB connection
-          echo "🔍 Testing MongoDB..."
-          docker-compose -f docker-compose.prod.yml exec -T mongodb mongosh --eval "db.adminCommand('ping')" || echo "❌ MongoDB not ready"
-          
           # Test Backend API
           echo "🔍 Testing Backend API..."
           sleep 10
@@ -141,7 +132,7 @@ jobs:
           # Install and check ports
           apt update && apt install -y net-tools curl
           echo "=== Listening Ports ==="
-          netstat -tlnp | grep -E ':(80|5000|27017)' || echo "No services listening on target ports"
+          netstat -tlnp | grep -E ':(80|5000)' || echo "No services listening on target ports"
           
           # Clean up old images
           docker image prune -f
@@ -153,4 +144,3 @@ jobs:
           echo "✅ MEDISIST Deployment complete!"
           echo "🌐 Frontend: http://${{ secrets.DROPLET_HOST }}"
           echo "🔗 Backend API: http://${{ secrets.DROPLET_HOST }}:5000"
-          echo "🗄️ MongoDB: ${{ secrets.DROPLET_HOST }}:27017"
