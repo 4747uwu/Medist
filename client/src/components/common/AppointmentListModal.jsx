@@ -18,6 +18,7 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
   
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [selectedPatientForPrescription, setSelectedPatientForPrescription] = useState(null);
+  const [selectedAppointmentForPrescription, setSelectedAppointmentForPrescription] = useState(null); // ✅ New state for selected appointment
 
   // Check if current user is an assigner
   const isAssigner = user?.role === 'assigner';
@@ -61,9 +62,13 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
     });
   };
 
+     
+
   // Handle prescription management
   const handleManagePrescription = (appointment) => {
+    console.log('Opening prescription modal for appointment:', appointment.appointmentId); // ✅ Add logging
     setSelectedPatientForPrescription(patient.patientId);
+    setSelectedAppointmentForPrescription(appointment.appointmentId); // ✅ Pass appointment ID
     setShowPrescriptionModal(true);
   };
 
@@ -85,6 +90,8 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
       setError('Failed to update appointment status');
     }
   };
+
+  // console.log(appointment)
 
   const getStatusColor = (status) => {
     const statusColors = {
@@ -109,6 +116,7 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
     };
     return typeColors[type] || 'bg-gray-50 text-gray-600';
   };
+  console.log(appointments)
 
   const formatDateTime = (date, time) => {
     if (!date) return 'Not scheduled';
@@ -335,7 +343,7 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
                           </button>
                         )}
 
-                        {/* Prescription Button - Always visible */}
+                        {/* ✅ FIXED: Show Prescription Button for both doctors and assigners */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -464,8 +472,10 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
         onClose={() => {
           setShowPrescriptionModal(false);
           setSelectedPatientForPrescription(null);
+          setSelectedAppointmentForPrescription(null);
         }}
         patientId={selectedPatientForPrescription}
+        appointmentId={selectedAppointmentForPrescription} // ✅ Pass appointment ID
       />
     </>
   );

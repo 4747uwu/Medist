@@ -1,5 +1,10 @@
 import mongoose from 'mongoose';
 
+// ✅ FIXED: Clear any cached model first
+if (mongoose.models.Prescription) {
+  delete mongoose.models.Prescription;
+}
+
 const prescriptionSchema = new mongoose.Schema({
   prescriptionId: {
     type: String,
@@ -48,16 +53,41 @@ const prescriptionSchema = new mongoose.Schema({
     scheduledTime: String,
     chiefComplaints: {
       primary: String,
+      secondary: [String],
       duration: String,
       severity: String
     },
     vitals: {
-      weight: { value: Number, unit: String },
-      temperature: { value: Number, unit: String },
-      bloodPressure: { systolic: Number, diastolic: Number },
-      heartRate: { value: Number, unit: String },
-      oxygenSaturation: { value: Number, unit: String },
-      bloodSugar: { value: Number, type: String, unit: String }
+      weight: {
+        value: Number,
+        unit: String
+      },
+      height: {
+        value: Number,
+        unit: String
+      },
+      temperature: {
+        value: Number,
+        unit: String
+      },
+      bloodPressure: {
+        systolic: Number,
+        diastolic: Number
+      },
+      heartRate: {
+        value: Number,
+        unit: String
+      },
+      oxygenSaturation: {
+        value: Number,
+        unit: String
+      },
+      // ✅ FIXED: Use proper nested schema syntax to avoid type conflicts
+      bloodSugar: {
+        value: { type: Number },
+        type: { type: String },  // ✅ Wrap in object with 'type' key
+        unit: { type: String }
+      }
     },
     examination: {
       physicalFindings: String,
@@ -73,7 +103,7 @@ const prescriptionSchema = new mongoose.Schema({
       ref: 'Medicine',
       required: true
     },
-    medicineName: String, // Denormalized for quick access
+    medicineName: String,
     medicineCode: String,
     dosage: String,
     frequency: String,
@@ -94,7 +124,7 @@ const prescriptionSchema = new mongoose.Schema({
       ref: 'Test',
       required: true
     },
-    testName: String, // Denormalized for quick access
+    testName: String,
     testCode: String,
     urgency: {
       type: String,
@@ -149,7 +179,7 @@ const prescriptionSchema = new mongoose.Schema({
     type: Date,
     default: function() {
       const date = new Date();
-      date.setMonth(date.getMonth() + 1); // Valid for 1 month by default
+      date.setMonth(date.getMonth() + 1);
       return date;
     }
   },
@@ -172,7 +202,7 @@ const prescriptionSchema = new mongoose.Schema({
 // Indexes for performance
 prescriptionSchema.index({ prescriptionId: 1 });
 prescriptionSchema.index({ patientId: 1 });
-prescriptionSchema.index({ appointmentId: 1 }); // NEW
+prescriptionSchema.index({ appointmentId: 1 });
 prescriptionSchema.index({ visitId: 1 });
 prescriptionSchema.index({ doctorId: 1 });
 prescriptionSchema.index({ labId: 1 });
@@ -182,7 +212,7 @@ prescriptionSchema.index({ validFrom: 1, validTill: 1 });
 // Compound indexes
 prescriptionSchema.index({ patientId: 1, createdAt: -1 });
 prescriptionSchema.index({ doctorId: 1, createdAt: -1 });
-prescriptionSchema.index({ appointmentId: 1, patientId: 1 }); // NEW
+prescriptionSchema.index({ appointmentId: 1, patientId: 1 });
 
 // Auto-generate prescription ID
 prescriptionSchema.pre('save', async function(next) {

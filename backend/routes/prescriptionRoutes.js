@@ -1,6 +1,7 @@
 import express from 'express';
 import Prescription from '../modals/Prescription.js';
 import Patient from '../modals/Patient.js';
+import Appointment from '../modals/Appointment.js'; // ✅ ADD: Import Appointment model
 import { protect } from '../utils/auth.js';
 import { sendSuccess, sendError } from '../utils/helpers.js';
 import { getPrescriptionsByPatient, generatePrescriptionPDF, getPrescriptionById } from '../controllers/prescription.controller.js';
@@ -11,6 +12,28 @@ const router = express.Router();
 router.use(protect);
 
 // **IMPORTANT: Order matters - most specific routes first**
+
+// Get prescriptions by appointment ID
+router.get('/appointment/:appointmentId', async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    
+    console.log('Fetching prescriptions for appointment:', appointmentId);
+    
+    const prescriptions = await Prescription.find({ appointmentId })
+      .populate('doctorId', 'profile.firstName profile.lastName name')
+      .populate('medicines.medicineId', 'name companyName')
+      .populate('tests.testId', 'testName category')
+      .sort({ createdAt: -1 });
+
+    console.log(`Found ${prescriptions.length} prescriptions for appointment ${appointmentId}`);
+    
+    sendSuccess(res, prescriptions, 'Appointment prescriptions retrieved successfully');
+  } catch (error) {
+    console.error('Error fetching appointment prescriptions:', error);
+    sendError(res, 'Error fetching appointment prescriptions', 500, error.message);
+  }
+});
 
 // Get all prescriptions for a patient
 router.get('/patient/:patientId', getPrescriptionsByPatient);
@@ -70,7 +93,7 @@ router.post('/', async (req, res) => {
   try {
     const {
       patientId,
-      appointmentId,
+      appointmentId, // ✅ FIXED: Capture appointmentId
       medicines,
       tests,
       diagnosis,
@@ -81,7 +104,7 @@ router.post('/', async (req, res) => {
 
     console.log('Creating prescription for:', {
       patientId,
-      appointmentId,
+      appointmentId, // ✅ FIXED: Log appointmentId
       doctorId: req.user.id,
       medicinesCount: medicines?.length || 0,
       testsCount: tests?.length || 0
@@ -102,10 +125,22 @@ router.post('/', async (req, res) => {
       return sendError(res, 'Patient not found', 404);
     }
 
+    // ✅ FIXED: If appointmentId is provided, validate and get appointment
+    let appointment = null;
+    if (appointmentId) {
+      appointment = await Appointment.findOne({ appointmentId });
+      if (!appointment) {
+        return sendError(res, 'Appointment not found', 404);
+      }
+      console.log('Linked to appointment:', appointment.appointmentId);
+    }
+
     // Get user's lab ID or default
     let labId = 'DEFAULT';
     if (req.user.doctorDetails?.labId) {
       labId = req.user.doctorDetails.labId;
+    } else if (appointment?.labId) {
+      labId = appointment.labId;
     }
 
     // Generate visitId if not provided
@@ -113,12 +148,37 @@ router.post('/', async (req, res) => {
 
     const prescriptionData = {
       patientId,
-      appointmentId: appointmentId || undefined,
+      appointmentId: appointmentId || null,
       visitId,
       doctorId: req.user.id,
       labId,
       generatedBy: req.user.id,
-      appointmentData: appointmentData || undefined,
+      appointmentData: appointmentData || (appointment ? {
+        appointmentId: appointment.appointmentId,
+        scheduledDate: appointment.scheduledDate,
+        scheduledTime: appointment.scheduledTime,
+        chiefComplaints: appointment.chiefComplaints,
+        // ✅ FIXED: More robust vitals handling
+        vitals: appointment.vitals ? {
+          weight: appointment.vitals.weight || null,
+          height: appointment.vitals.height || null,
+          temperature: appointment.vitals.temperature || null,
+          bloodPressure: appointment.vitals.bloodPressure || null,
+          heartRate: appointment.vitals.heartRate || null,
+          oxygenSaturation: appointment.vitals.oxygenSaturation || null,
+          // ✅ FIXED: Ensure bloodSugar is properly structured
+          bloodSugar: appointment.vitals.bloodSugar ? {
+            value: appointment.vitals.bloodSugar.value || null,
+            type: appointment.vitals.bloodSugar.type || 'Random',
+            unit: appointment.vitals.bloodSugar.unit || 'mg/dL'
+          } : {
+            value: null,
+            type: 'Random',
+            unit: 'mg/dL'
+          }
+        } : null,
+        examination: appointment.examination || null
+      } : null),
       medicines: (medicines || []).map(med => ({
         medicineId: med.medicineId,
         medicineName: med.medicineName,
@@ -146,25 +206,51 @@ router.post('/', async (req, res) => {
       }
     };
 
-    console.log('Prescription data to save:', prescriptionData);
+    // ✅ FIXED: Add detailed logging to debug the exact data being saved
+    console.log('📋 Prescription creation details:', {
+      patientId: prescriptionData.patientId,
+      appointmentId: prescriptionData.appointmentId,
+      hasAppointmentData: !!prescriptionData.appointmentData,
+      appointmentDataVitals: prescriptionData.appointmentData?.vitals,
+      bloodSugarData: prescriptionData.appointmentData?.vitals?.bloodSugar
+    });
 
     // Create prescription
     const prescription = await Prescription.create(prescriptionData);
 
-    // Add prescription reference to patient
+    // ✅ FIXED: Update appointment to mark prescription as issued
+    if (appointmentId && appointment) {
+      appointment.treatment = {
+        ...appointment.treatment,
+        prescriptionIssued: true,
+        prescriptionId: prescription._id,
+        prescriptionDate: new Date()
+      };
+      await appointment.save();
+      console.log('Appointment updated with prescription info');
+
+      // ✅ FIXED: Update patient appointment record
+      await patient.updateAppointmentPrescription(
+        appointmentId, 
+        prescription._id, 
+        prescription.prescriptionId
+      );
+    }
+
+    // Add prescription reference to patient with appointmentId
     await patient.addPrescription({
       _id: prescription._id,
       prescriptionId: prescription.prescriptionId,
       doctorId: req.user.id,
       doctorName: req.user.profile?.fullName || 'Unknown Doctor',
       visitId: visitId,
-      appointmentId: appointmentId || undefined,
+      appointmentId: appointmentId || null, // ✅ FIXED: Include appointmentId
       createdAt: prescription.createdAt,
       medicines: prescription.medicines,
       tests: prescription.tests
     });
 
-    // 🔥 NEW: Update patient workflow status to "Reported" when prescription is created
+    // Update patient workflow status to "Reported" when prescription is created
     await Patient.findOneAndUpdate(
       { patientId },
       {
@@ -173,7 +259,10 @@ router.post('/', async (req, res) => {
       }
     );
 
-    console.log('Prescription created successfully and patient status updated to Reported:', prescription.prescriptionId);
+    console.log('Prescription created successfully with appointmentId:', {
+      prescriptionId: prescription.prescriptionId,
+      appointmentId: prescription.appointmentId
+    });
 
     sendSuccess(res, prescription, 'Prescription created successfully', 201);
   } catch (error) {

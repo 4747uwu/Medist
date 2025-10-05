@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../contexts/AuthContext'; // ✅ ADD: Import useAuth
 import { apiClient } from '../../services/api';
 
 const formatDateTime = (d) => {
@@ -8,12 +9,18 @@ const formatDateTime = (d) => {
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-const SeePrescriptionModal = ({ isOpen, onClose, patientId }) => {
+const SeePrescriptionModal = ({ isOpen, onClose, patientId, appointmentId = null }) => {
+  const { user } = useAuth(); // ✅ ADD: Get current user
   const [loading, setLoading] = useState(false);
   const [prescriptions, setPrescriptions] = useState([]);
   const [error, setError] = useState(null);
   const [downloadingPDF, setDownloadingPDF] = useState({});
   const [expandedCards, setExpandedCards] = useState({});
+  const [showCreatePrescriptionModal, setShowCreatePrescriptionModal] = useState(false); // ✅ ADD: State for create modal
+
+  // ✅ ADD: Check if current user is a doctor
+  const isDoctor = user?.role === 'doctor';
+  console.log('SeePrescriptionModal - User Role:', user?.role, { isDoctor });
 
   useEffect(() => {
     if (!isOpen || !patientId) return;
@@ -22,21 +29,47 @@ const SeePrescriptionModal = ({ isOpen, onClose, patientId }) => {
       setLoading(true);
       setError(null);
       try {
-        console.log('Fetching prescriptions for patient:', patientId);
-        const response = await apiClient.get(`/prescriptions/patient/${patientId}`);
-        const prescriptionList = response.data?.data || [];
-        setPrescriptions(prescriptionList);
-        console.log('Found prescriptions:', prescriptionList.length);
+        console.log('Fetching prescriptions for:', { patientId, appointmentId });
+        
+        // ✅ FIXED: If appointmentId is provided, only fetch prescriptions for that appointment
+        if (appointmentId) {
+          console.log('Fetching prescriptions for specific appointment:', appointmentId);
+          const response = await apiClient.get(`/prescriptions/appointment/${appointmentId}`);
+          const prescriptionList = response.data?.data || [];
+          setPrescriptions(prescriptionList);
+          console.log('Found appointment-specific prescriptions:', prescriptionList.length);
+          
+          // ✅ FIXED: If no prescriptions found for this appointment, show empty state (no fallback)
+          if (prescriptionList.length === 0) {
+            console.log('No prescriptions found for this appointment - showing empty state');
+          }
+        } else {
+          // Only fetch all patient prescriptions if no specific appointment requested
+          console.log('Fetching all prescriptions for patient:', patientId);
+          const response = await apiClient.get(`/prescriptions/patient/${patientId}`);
+          const prescriptionList = response.data?.data || [];
+          setPrescriptions(prescriptionList);
+          console.log('Found patient prescriptions:', prescriptionList.length);
+        }
       } catch (err) {
         console.error('Error fetching prescriptions:', err);
-        setError('Failed to load prescriptions');
+        
+        // ✅ FIXED: For appointment-specific requests, don't fall back to all prescriptions
+        if (appointmentId) {
+          console.log('Error fetching appointment prescriptions - showing empty state (no fallback)');
+          setPrescriptions([]);
+          setError(null); // Don't show error for empty appointment prescriptions
+        } else {
+          setError('Failed to load prescriptions');
+          setPrescriptions([]);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchPrescriptions();
-  }, [isOpen, patientId]);
+  }, [isOpen, patientId, appointmentId]);
 
   const downloadPDF = async (prescriptionId) => {
     setDownloadingPDF(prev => ({ ...prev, [prescriptionId]: true }));
@@ -77,6 +110,38 @@ const SeePrescriptionModal = ({ isOpen, onClose, patientId }) => {
     }));
   };
 
+  // ✅ FIXED: Show appropriate title and empty message based on context
+  const getTitle = () => {
+    if (appointmentId) {
+      return 'Appointment Prescription';
+    }
+    return 'Prescriptions';
+  };
+
+  const getEmptyMessage = () => {
+    if (appointmentId) {
+      return {
+        title: 'No prescription for this appointment',
+        subtitle: 'This appointment does not have a prescription yet'
+      };
+    }
+    return {
+      title: 'No prescriptions found',
+      subtitle: 'This patient has no prescription history'
+    };
+  };
+
+  // ✅ ADD: Handler for creating new prescription
+  const handleCreatePrescription = () => {
+    if (appointmentId) {
+      // Navigate to prescription page with appointment context
+      window.location.href = `/prescription/${patientId}?appointmentId=${appointmentId}&fromAppointment=true`;
+    } else {
+      // Navigate to general prescription page
+      window.location.href = `/prescription/${patientId}`;
+    }
+  };
+ console.log('SeePrescriptionModal - Render', { isOpen, patientId, appointmentId, prescriptions, loading, error });
   if (!isOpen) return null;
 
   return (
@@ -86,9 +151,14 @@ const SeePrescriptionModal = ({ isOpen, onClose, patientId }) => {
         <div className="flex items-center justify-between p-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
           <div>
             <h3 className="text-xl font-semibold text-black">
-              Prescriptions
+              {getTitle()}
             </h3>
-            <p className="text-sm text-gray-600 mt-1">Patient #{patientId}</p>
+            <p className="text-sm text-gray-600 mt-1">
+              Patient #{patientId}
+              {appointmentId && (
+                <span className="ml-2 text-blue-600">• Appointment: {appointmentId}</span>
+              )}
+            </p>
           </div>
           <button 
             onClick={onClose} 
@@ -125,8 +195,18 @@ const SeePrescriptionModal = ({ isOpen, onClose, patientId }) => {
                 <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <div className="text-gray-500 font-medium">No prescriptions found</div>
-                <div className="text-gray-400 text-sm mt-1">This patient has no prescription history</div>
+                <div className="text-gray-500 font-medium">{getEmptyMessage().title}</div>
+                <div className="text-gray-400 text-sm mt-1">{getEmptyMessage().subtitle}</div>
+                
+                {/* ✅ ADD: Show create prescription button only for doctors */}
+                {isDoctor && appointmentId && (
+                  <button
+                    onClick={handleCreatePrescription}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    Create Prescription
+                  </button>
+                )}
               </div>
             </div>
           )}

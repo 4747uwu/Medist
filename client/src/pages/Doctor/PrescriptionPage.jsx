@@ -319,7 +319,7 @@ const PrescriptionPage = () => {
 
       const prescriptionPayload = {
         patientId,
-        appointmentId: appointmentId || null,
+        appointmentId: appointmentId || null, // ✅ Get from URL params
         visitId: appointment?.visitId || patient?.currentVisitId || `VISIT-${patientId}-${Date.now()}`,
         medicines: selectedMedicines.map(med => ({
           medicineId: med._id || med.medicineId,
@@ -340,7 +340,7 @@ const PrescriptionPage = () => {
         })),
         ...prescriptionData,
         appointmentData: appointment ? {
-          appointmentId: appointment.appointmentId,
+          appointmentId: appointment.appointmentId, // ✅ Include appointmentId in appointmentData
           scheduledDate: appointment.scheduledDate,
           scheduledTime: appointment.scheduledTime,
           chiefComplaints: appointment.chiefComplaints,
@@ -349,17 +349,18 @@ const PrescriptionPage = () => {
         } : null
       };
 
-      console.log('Sending prescription data:', prescriptionPayload);
+      // ✅ FIXED: Add logging to verify appointmentId is being sent
+      console.log('Saving prescription with data:', {
+        appointmentId: prescriptionPayload.appointmentId,
+        isFromAppointment: fromAppointment,
+        hasAppointmentData: !!prescriptionPayload.appointmentData
+      });
 
       let response;
       if (isEditing && existingPrescription) {
         response = await apiClient.put(`/prescriptions/${existingPrescription.prescriptionId}`, prescriptionPayload);
       } else {
-        if (appointmentId) {
-          response = await apiClient.post(`/appointments/${appointmentId}/prescription`, prescriptionPayload);
-        } else {
-          response = await apiClient.post('/prescriptions', prescriptionPayload);
-        }
+        response = await apiClient.post('/prescriptions', prescriptionPayload);
       }
       
       if (response.data.success) {
@@ -374,22 +375,7 @@ const PrescriptionPage = () => {
       }
     } catch (error) {
       console.error('Error saving prescription:', error);
-      
-      let errorMessage = `Failed to ${isEditing ? 'update' : 'save'} prescription. Please try again.`;
-      
-      if (error.response?.data) {
-        if (error.response.data.message) {
-          errorMessage = error.response.data.message;
-        } else if (error.response.data.error) {
-          if (Array.isArray(error.response.data.error)) {
-            errorMessage = error.response.data.error.map(err => `${err.field}: ${err.message}`).join(', ');
-          } else {
-            errorMessage = error.response.data.error;
-          }
-        }
-      }
-      
-      setError(errorMessage);
+      setError('Failed to save prescription. Please try again.');
     } finally {
       setSaving(false);
     }

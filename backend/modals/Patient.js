@@ -229,6 +229,7 @@ const patientSchema = new mongoose.Schema({
             doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
             doctorName: String,
             visitId: String,
+            appointmentId: String, // ✅ FIXED: Add appointmentId field
             prescribedDate: Date,
             status: { type: String, enum: ['Active', 'Completed', 'Cancelled', 'Expired'], default: 'Active' },
             medicineCount: Number,
@@ -335,9 +336,11 @@ patientSchema.methods.addPrescription = function(prescriptionData) {
         doctorId: prescriptionData.doctorId,
         doctorName: prescriptionData.doctorName,
         visitId: prescriptionData.visitId,
+        appointmentId: prescriptionData.appointmentId || null, // ✅ FIXED: Add appointmentId
         prescribedDate: prescriptionData.createdAt || new Date(),
         medicineCount: prescriptionData.medicines?.length || 0,
         testCount: prescriptionData.tests?.length || 0,
+        status: 'Active'
     });
 
     const stats = this.prescriptions.stats;
@@ -403,6 +406,7 @@ patientSchema.methods.updateAppointmentStatus = function(appointmentId, status) 
     return Promise.resolve(this);
 };
 
+// ✅ FIXED: Add method to update appointment prescription status
 patientSchema.methods.updateAppointmentPrescription = function(appointmentId, prescriptionId, prescriptionCode) {
     const appointment = this.appointments.list.find(apt => apt.appointmentId === appointmentId);
     if (appointment) {
@@ -413,7 +417,6 @@ patientSchema.methods.updateAppointmentPrescription = function(appointmentId, pr
     }
     return Promise.resolve(this);
 };
-
 
 // --- Patient Hooks ---
 patientSchema.pre('save', function(next) {
