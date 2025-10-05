@@ -1,4 +1,4 @@
-name: Deploy MEDISIST to DigitalOcean Droplet
+name: Deploy to DigitalOcean Droplet
 
 on:
   push:
@@ -50,34 +50,36 @@ jobs:
           
           # Clean up and get fresh code
           rm -rf Anish2
-          git clone https://github.com/YOUR_USERNAME/Anish2.git
+          
+          # 🔥 FIXED: Use the actual repository URL (since repo is public)
+          git clone https://github.com/${{ github.repository }}.git Anish2
           
           # Navigate to the project directory
           cd Anish2
           
-          # ✅ Create production environment file
+          # ✅ Create production environment file using secrets
           cat > .env << 'EOF'
           NODE_ENV=production
-          MONGODB_URI=mongodb://root:your_super_secret_mongo_password@${{ secrets.DROPLET_HOST }}:27017/Anish?authSource=admin
-          JWT_SECRET=your_super_secure_jwt_secret_key_for_medisist_production
+          MONGODB_URI=mongodb://root:${{ secrets.MONGO_ROOT_PASSWORD }}@${{ secrets.DROPLET_HOST }}:27017/Anish?authSource=admin
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
           JWT_EXPIRE=30d
           FRONTEND_URL=http://${{ secrets.DROPLET_HOST }}
           MAX_FILE_SIZE=52428800
           
           # MongoDB
           MONGO_ROOT_USERNAME=root
-          MONGO_ROOT_PASSWORD=your_super_secret_mongo_password
+          MONGO_ROOT_PASSWORD=${{ secrets.MONGO_ROOT_PASSWORD }}
           MONGO_DB_NAME=Anish
           
           # Email Configuration
           EMAIL_HOST=smtp.gmail.com
           EMAIL_PORT=587
-          EMAIL_USER=your_email@gmail.com
-          EMAIL_PASS=your_app_password
+          EMAIL_USER=${{ secrets.EMAIL_USER }}
+          EMAIL_PASS=${{ secrets.EMAIL_PASS }}
           
           # SMS Configuration (Optional)
-          SMS_API_KEY=your_sms_api_key
-          SMS_API_SECRET=your_sms_api_secret
+          SMS_API_KEY=${{ secrets.SMS_API_KEY }}
+          SMS_API_SECRET=${{ secrets.SMS_API_SECRET }}
           
           # Frontend Environment
           VITE_API_URL=http://${{ secrets.DROPLET_HOST }}:5000
