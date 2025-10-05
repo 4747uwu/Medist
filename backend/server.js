@@ -23,30 +23,33 @@ const app = express();
 connectDB();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP from helmet to avoid conflicts
+}));
+
+// ✅ FIXED: Updated CORS to allow both frontend and direct API access
 app.use(cors({
-  origin: 'http://157.245.86.199' || 'http://localhost:5173' ,
-  credentials: true
+  origin: [
+    'http://157.245.86.199',        // Frontend domain
+    'http://157.245.86.199:80',     // Frontend with port
+    'http://localhost:5173',        // Local development
+    'http://localhost:3000'         // Alternative local port
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
 }));
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000 // limit each IP to 100 requests per windowMs
+  max: 1000 // limit each IP to 1000 requests per windowMs
 });
 app.use(limiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-
-// // Database connection
-// mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/medical_system', {
-//   useNewUrlParser: true,
-//   useUnifiedTopology: true,
-// })
-// .then(() => console.log('MongoDB connected successfully'))
-// .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -56,14 +59,9 @@ app.use('/api/clinic', clinicRoutes); // NEW
 app.use('/api/doctor', doctorRoutes);
 app.use('/api/tests', testRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
-// app.use('/api/prescriptions', prescriptionsRoutes);
 app.use('/api/medicines', medicineRoutes);
-
 app.use('/api/patients', patientEDITRoutes);
 app.use('/api/appointments', appointmentRoutes);
-
-
-
 
 // Health check route
 app.get('/api/health', (req, res) => {
