@@ -20,7 +20,10 @@ export const protect = async (req, res, next) => {
 
     try {
       // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const jwt = require('jsonwebtoken');
+
+const decoded = jwt.verify(token, 'anishanish');
+
       
       // Get user from database
       const user = await User.findById(decoded.id).select('-password');
