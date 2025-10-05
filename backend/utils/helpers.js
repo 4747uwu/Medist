@@ -26,10 +26,10 @@ export const sendError = (res, message = 'Something went wrong', statusCode = 50
 export const sendTokenResponse = (user, statusCode, res, message = 'Success') => {
   // Create token
   const token = jwt.sign(
-    { id: user._id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || '30d' }
-  );
+  { id: user._id, role: user.role },
+  'anishanish', // hardcoded secret
+  { expiresIn: process.env.JWT_EXPIRE || '30d' }
+);
 
   // Remove password from user object
   const userObj = user.toObject ? user.toObject() : user;
@@ -38,7 +38,7 @@ export const sendTokenResponse = (user, statusCode, res, message = 'Success') =>
   // Set cookie options
   const options = {
     expires: new Date(
-      Date.now() + (process.env.JWT_COOKIE_EXPIRE || 30) * 24 * 60 * 60 * 1000
+      Date.now() + ( 30) * 24 * 60 * 60 * 1000
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
