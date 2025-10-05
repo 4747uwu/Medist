@@ -24,12 +24,21 @@ export const sendError = (res, message = 'Something went wrong', statusCode = 50
 
 // Send token response helper
 export const sendTokenResponse = (user, statusCode, res, message = 'Success') => {
-  // Create token
+  console.log('=== HELPERS: SENDING TOKEN RESPONSE ===');
+  console.log('User data:', {
+    id: user._id,
+    email: user.email,
+    role: user.role
+  });
+  
+  // ✅ FIXED: Use consistent hardcoded secret
   const token = jwt.sign(
-  { id: user._id, role: user.role },
-  'anishanish', // hardcoded secret
-  { expiresIn: process.env.JWT_EXPIRE || '30d' }
-);
+    { id: user._id, role: user.role },
+    'anishanish', // Same hardcoded secret as auth.js
+    { expiresIn: process.env.JWT_EXPIRE || '30d' }
+  );
+
+  console.log('✅ Token created successfully');
 
   // Remove password from user object
   const userObj = user.toObject ? user.toObject() : user;
@@ -38,13 +47,15 @@ export const sendTokenResponse = (user, statusCode, res, message = 'Success') =>
   // Set cookie options
   const options = {
     expires: new Date(
-      Date.now() + ( 30) * 24 * 60 * 60 * 1000
+      Date.now() + (30) * 24 * 60 * 60 * 1000
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict'
   };
 
+  console.log('✅ Sending response with token');
+  
   // Send response
   res
     .status(statusCode)
