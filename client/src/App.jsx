@@ -7,8 +7,8 @@ import AuthPage from './components/auth/AuthPage';
 import ClinicDashboard from './pages/clinic/Dashboard';
 import DoctorDashboard from './pages/Doctor/Dashboard';
 import AssignerDashboard from './pages/assigner/Dashboard';
-import PrescriptionPage from './pages/doctor/PrescriptionPage.jsx';
-import PrescriptionHistoryPage from './pages/doctor/PrescriptionHistoryPage.jsx';
+import PrescriptionPage from './pages/Doctor/PrescriptionPage.jsx';
+import PrescriptionHistoryPage from './pages/Doctor/PrescriptionHistoryPage.jsx';
 
 // Protected Route Component (moved here)
 const ProtectedRoute = ({ children, requiredRole = null }) => {
