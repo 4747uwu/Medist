@@ -1,0 +1,154 @@
+name: Deploy MEDISIST to DigitalOcean Droplet
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Deploy to droplet
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.DROPLET_HOST }}
+        username: ${{ secrets.DROPLET_USER }}
+        password: ${{ secrets.DROPLET_PASSWORD }}
+        script: |
+          # ✅ INSTALL DOCKER & DOCKER COMPOSE IF NOT PRESENT
+          if ! command -v docker &> /dev/null; then
+            echo "🔧 Installing Docker..."
+            apt update
+            apt install -y apt-transport-https ca-certificates curl software-properties-common
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+            add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            apt update
+            apt install -y docker-ce docker-ce-cli containerd.io
+            systemctl start docker
+            systemctl enable docker
+            usermod -aG docker $USER
+            echo "✅ Docker installed"
+          else
+            echo "✅ Docker already present"
+          fi
+          
+          if ! command -v docker-compose &> /dev/null; then
+            echo "🔧 Installing Docker Compose..."
+            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            chmod +x /usr/local/bin/docker-compose
+            ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+            echo "✅ Docker Compose installed"
+          else
+            echo "✅ Docker Compose already present"
+          fi
+
+          # Create and navigate to project directory
+          mkdir -p /opt/medisist-app
+          cd /opt/medisist-app
+          
+          # Clean up and get fresh code
+          rm -rf Anish2
+          git clone https://github.com/YOUR_USERNAME/Anish2.git
+          
+          # Navigate to the project directory
+          cd Anish2
+          
+          # ✅ Create production environment file
+          cat > .env << 'EOF'
+          NODE_ENV=production
+          MONGODB_URI=mongodb://root:your_super_secret_mongo_password@${{ secrets.DROPLET_HOST }}:27017/Anish?authSource=admin
+          JWT_SECRET=your_super_secure_jwt_secret_key_for_medisist_production
+          JWT_EXPIRE=30d
+          FRONTEND_URL=http://${{ secrets.DROPLET_HOST }}
+          MAX_FILE_SIZE=52428800
+          
+          # MongoDB
+          MONGO_ROOT_USERNAME=root
+          MONGO_ROOT_PASSWORD=your_super_secret_mongo_password
+          MONGO_DB_NAME=Anish
+          
+          # Email Configuration
+          EMAIL_HOST=smtp.gmail.com
+          EMAIL_PORT=587
+          EMAIL_USER=your_email@gmail.com
+          EMAIL_PASS=your_app_password
+          
+          # SMS Configuration (Optional)
+          SMS_API_KEY=your_sms_api_key
+          SMS_API_SECRET=your_sms_api_secret
+          
+          # Frontend Environment
+          VITE_API_URL=http://${{ secrets.DROPLET_HOST }}:5000
+          VITE_WS_URL=ws://${{ secrets.DROPLET_HOST }}:5000
+          EOF
+          
+          # ✅ SAFE: Only stop our project containers
+          echo "=== Gentle cleanup ==="
+          docker-compose -f docker-compose.prod.yml stop backend frontend mongodb 2>/dev/null || echo "No existing MEDISIST containers to stop"
+          docker-compose -f docker-compose.prod.yml rm -f backend frontend mongodb 2>/dev/null || echo "No existing MEDISIST containers to remove"
+          
+          # Build all services
+          echo "=== Building MEDISIST services ==="
+          if ! docker-compose -f docker-compose.prod.yml build --no-cache; then
+            echo "❌ Build failed! Checking logs..."
+            docker-compose -f docker-compose.prod.yml logs
+            exit 1
+          fi
+          
+          # Start all services
+          echo "=== Starting MEDISIST services ==="
+          if ! docker-compose -f docker-compose.prod.yml up -d; then
+            echo "❌ Container startup failed! Checking logs..."
+            docker-compose -f docker-compose.prod.yml logs
+            exit 1
+          fi
+          
+          # Wait for containers to start
+          sleep 30
+          
+          # Show all running containers
+          echo "=== All Running Containers ==="
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+          
+          # Check our project containers specifically
+          echo "=== MEDISIST Status ==="
+          docker-compose -f docker-compose.prod.yml ps
+          
+          # Check health of services
+          echo "=== Health Checks ==="
+          
+          # Test MongoDB connection
+          echo "🔍 Testing MongoDB..."
+          docker-compose -f docker-compose.prod.yml exec -T mongodb mongosh --eval "db.adminCommand('ping')" || echo "❌ MongoDB not ready"
+          
+          # Test Backend API
+          echo "🔍 Testing Backend API..."
+          sleep 10
+          curl -f http://localhost:5000/api/health || echo "❌ Backend API not ready"
+          
+          # Test Frontend
+          echo "🔍 Testing Frontend..."
+          curl -f http://localhost:80/health || echo "❌ Frontend not ready"
+          
+          # Check logs for any errors
+          echo "=== Recent Container Logs ==="
+          docker-compose -f docker-compose.prod.yml logs --tail=30
+          
+          # Install and check ports
+          apt update && apt install -y net-tools curl
+          echo "=== Listening Ports ==="
+          netstat -tlnp | grep -E ':(80|5000|27017)' || echo "No services listening on target ports"
+          
+          # Clean up old images
+          docker image prune -f
+          
+          # Display final status
+          echo "=== Final Service Status ==="
+          docker-compose -f docker-compose.prod.yml ps
+          
+          echo "✅ MEDISIST Deployment complete!"
+          echo "🌐 Frontend: http://${{ secrets.DROPLET_HOST }}"
+          echo "🔗 Backend API: http://${{ secrets.DROPLET_HOST }}:5000"
+          echo "🗄️ MongoDB: ${{ secrets.DROPLET_HOST }}:27017"

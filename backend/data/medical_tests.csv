@@ -1,0 +1,58 @@
+Category,Test Name
+Blood Tests,Complete Blood Count (CBC)
+Blood Tests,Blood Sugar (Fasting)
+Blood Tests,Blood Sugar (Postprandial)
+Blood Tests,Random Blood Sugar
+Blood Tests,HbA1c (Glycated Hemoglobin)
+Blood Tests,Lipid Profile
+Blood Tests,Liver Function Test (LFT)
+Blood Tests,Kidney Function Test (KFT / RFT)
+Blood Tests,"Thyroid Function Test (T3, T4, TSH)"
+Blood Tests,"Serum Electrolytes (Na, K, Cl)"
+Blood Tests,Vitamin D
+Blood Tests,Vitamin B12
+Blood Tests,"Iron Studies (Ferritin, TIBC)"
+Urine & Stool Tests,Urine Routine & Microscopy
+Urine & Stool Tests,Urine Culture & Sensitivity
+Urine & Stool Tests,Stool Routine & Microscopy
+Urine & Stool Tests,Stool Occult Blood Test
+Infection & Immunology Tests,Dengue NS1 Antigen
+Infection & Immunology Tests,Dengue IgM
+Infection & Immunology Tests,Dengue IgG
+Infection & Immunology Tests,Malaria Parasite Test
+Infection & Immunology Tests,Typhoid (Widal Test)
+Infection & Immunology Tests,Typhidot
+Infection & Immunology Tests,HIV Test
+Infection & Immunology Tests,HBsAg (Hepatitis B Surface Antigen)
+Infection & Immunology Tests,HCV Antibody Test
+Infection & Immunology Tests,COVID-19 RTPCR
+Infection & Immunology Tests,COVID-19 Antigen Test
+Special Tests,Tumor Marker - PSA
+Special Tests,Tumor Marker - CA-125
+Special Tests,Tumor Marker - CEA
+Special Tests,ANA (Antinuclear Antibody)
+Special Tests,CRP (C-Reactive Protein)
+Special Tests,ESR (Erythrocyte Sedimentation Rate)
+Special Tests,D-Dimer
+Special Tests,"Coagulation Profile (PT, INR, aPTT)"
+Imaging & Radiology,X-Ray Chest
+Imaging & Radiology,X-Ray Limb
+Imaging & Radiology,X-Ray Spine
+Imaging & Radiology,Ultrasound Abdomen
+Imaging & Radiology,Ultrasound Pelvis
+Imaging & Radiology,Ultrasound Obstetric
+Imaging & Radiology,CT Scan Brain
+Imaging & Radiology,CT Scan Abdomen
+Imaging & Radiology,CT Scan Chest
+Imaging & Radiology,MRI Brain
+Imaging & Radiology,MRI Spine
+Imaging & Radiology,MRI Joints
+Imaging & Radiology,Mammography
+Imaging & Radiology,ECG (Electrocardiogram)
+Imaging & Radiology,Echocardiography
+Imaging & Radiology,TMT (Stress Test)
+Other Tests,Pulmonary Function Test (PFT)
+Other Tests,EEG (Electroencephalogram)
+Other Tests,Bone Density (DEXA Scan)
+Other Tests,Pap Smear
+Other Tests,Allergy Test
