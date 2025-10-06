@@ -1,11 +1,15 @@
 import express from 'express';
+import { protect, authorize } from '../utils/auth.js';
 import {
   getAssignedPatients,
-  updatePatientWorkflowStatus,
   getPatientDetails,
   getDoctorStats
 } from '../controllers/doctor.controller.js';
-import { protect, authorize } from '../utils/auth.js';
+import {
+  getDoctorAppointments,
+  getDoctorAppointmentsByPatient,
+  updateDoctorAppointmentStatus
+} from '../controllers/doctorappointment.controller.js';
 
 const router = express.Router();
 
@@ -13,10 +17,16 @@ const router = express.Router();
 router.use(protect);
 router.use(authorize('doctor'));
 
-// Patient routes for doctor
+// ✅ NEW: Appointment routes
+router.get('/appointments', getDoctorAppointments);
+router.get('/appointments/patient/:patientId', getDoctorAppointmentsByPatient);
+router.put('/appointments/:appointmentId/status', updateDoctorAppointmentStatus);
+
+// Patient routes (kept for backward compatibility)
 router.get('/patients', getAssignedPatients);
 router.get('/patients/:patientId', getPatientDetails);
-router.put('/patients/:patientId/status', updatePatientWorkflowStatus);
+
+// Statistics route
 router.get('/stats', getDoctorStats);
 
 export default router;

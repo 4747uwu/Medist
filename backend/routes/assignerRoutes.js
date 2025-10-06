@@ -1,33 +1,20 @@
 import express from 'express';
+import { protect, authorize } from '../utils/auth.js';
 import {
   getPatients,
+  getClinics,
   getPatientById,
   getPatientStats,
-  updatePatientStatus,
   getDoctors,
-  assignPatientToDoctor,  // ✅ Updated function name,
-  getClinics
+  assignDoctorToAppointment, // ✅ UPDATED: Now assigns to appointment
+  updatePatientStatus
 } from '../controllers/assigner.controller.js';
-import {
-  createLab,
-  getLabs,
-  getLabById,
-  updateLab,
-  deleteLab,
-  createDoctor,
-  getDoctors as getCrudDoctors,
-  getDoctorById,
-  updateDoctor,
-  deleteDoctor
-} from '../controllers/assignerCrud.controller.js';
-
-import { protect, authorize } from '../utils/auth.js';
 
 const router = express.Router();
 
-// Protect all routes and authorize only assigners
+// All routes require authentication and assigner role
 router.use(protect);
-// router.use(authorize('assigner')); // ✅ Uncomment if you want to restrict to assigners only
+router.use(authorize('assigner'));
 
 // Patient routes
 router.get('/patients', getPatients);
@@ -35,25 +22,13 @@ router.get('/patients/stats', getPatientStats);
 router.get('/patients/:id', getPatientById);
 router.put('/patients/:id/status', updatePatientStatus);
 
-// ✅ SIMPLIFIED Assignment routes
-router.get('/doctors', getDoctors);                                  // For assignment dropdown
-router.post('/patients/:patientId/assign', assignPatientToDoctor);   // Assign/reassign patient
-
-// Lab CRUD routes
-router.post('/labs', createLab);
-router.get('/labs', getLabs);
-router.get('/labs/:id', getLabById);
-router.put('/labs/:id', updateLab);
-router.delete('/labs/:id', deleteLab);
-
-// Doctor CRUD routes
-router.post('/doctors', createDoctor);
-router.get('/doctors/all', getCrudDoctors);
-router.get('/doctors/:id', getDoctorById);
-router.put('/doctors/:id', updateDoctor);
-router.delete('/doctors/:id', deleteDoctor);
-
-// ✅ Add clinic route
+// Clinic routes
 router.get('/clinics', getClinics);
+
+// Doctor routes
+router.get('/doctors', getDoctors);
+
+// ✅ UPDATED: Assign doctor to appointment
+router.post('/appointments/:appointmentId/assign', assignDoctorToAppointment);
 
 export default router;

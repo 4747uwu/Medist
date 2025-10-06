@@ -1,5 +1,6 @@
 import Prescription from '../modals/Prescription.js';
 import Patient from '../modals/Patient.js'; // Add Patient import
+import Appointment from '../modals/Appointment.js'; // Add Appointment import
 import { sendSuccess, sendError } from '../utils/helpers.js';
 import puppeteer from 'puppeteer';
 
@@ -191,6 +192,71 @@ export const generatePrescriptionPDF = async (req, res) => {
   } catch (err) {
     console.error('Error generating PDF:', err);
     sendError(res, 'Error generating PDF', 500, err.message);
+  }
+};
+
+// POST /api/prescriptions - Create a new prescription
+export const createPrescription = async (req, res) => {
+  console.log('=== CREATE PRESCRIPTION REQUEST START ===');
+  
+  try {
+    const prescriptionData = req.body;
+    const { appointmentId } = prescriptionData;
+
+    // ... existing validation code ...
+
+    // Create prescription
+    const prescription = await Prescription.create({
+      ...prescriptionData,
+      createdBy: req.user.id,
+      updatedBy: req.user.id
+    });
+
+    // ✅ If prescription is linked to an appointment, update appointment
+    if (appointmentId) {
+      const appointment = await Appointment.findOne({ appointmentId });
+      
+      if (appointment) {
+        // Add prescription to appointment
+        await appointment.addPrescription(prescription);
+
+        // ✅ AUTO-COMPLETE: Mark appointment as completed
+        appointment.status = 'Completed';
+        appointment.completedAt = new Date();
+        appointment.lastModifiedBy = req.user.id;
+        await appointment.save();
+
+        console.log(`✅ Appointment ${appointmentId} marked as Completed after prescription creation`);
+
+        // Update patient's appointment record
+        await Patient.findOneAndUpdate(
+          {
+            patientId: prescription.patientId,
+            'appointments.list.appointmentId': appointmentId
+          },
+          {
+            $set: {
+              'appointments.list.$.status': 'Completed',
+              'appointments.list.$.prescriptionIssued': true,
+              'appointments.list.$.prescriptionId': prescription._id,
+              'appointments.list.$.prescriptionCode': prescription.prescriptionId
+            }
+          }
+        );
+      }
+    }
+
+    // ... rest of existing code ...
+
+    sendSuccess(res, {
+      prescription,
+      appointmentCompleted: !!appointmentId // Flag to inform frontend
+    }, 'Prescription created successfully', 201);
+
+  } catch (error) {
+    console.error('=== CREATE PRESCRIPTION ERROR ===');
+    console.error('Error:', error);
+    sendError(res, 'Error creating prescription', 500, error.message);
   }
 };
 

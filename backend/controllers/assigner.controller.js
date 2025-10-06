@@ -784,6 +784,110 @@ export const assignPatientToDoctor = async (req, res) => {
   }
 };
 
+// ✅ UPDATED: Assign doctor to APPOINTMENT, not patient
+// @desc    Assign doctor to appointment
+// @route   POST /api/assigner/appointments/:appointmentId/assign
+// @access  Private (Assigner only)
+export const assignDoctorToAppointment = async (req, res) => {
+  console.log('=== ASSIGN DOCTOR TO APPOINTMENT REQUEST START ===');
+  console.log('Appointment ID:', req.params.appointmentId);
+  console.log('Request body:', req.body);
+
+  try {
+    const { doctorId, notes = '' } = req.body;
+    const { appointmentId } = req.params;
+
+    // Validate appointment exists
+    const appointment = await Appointment.findOne({ appointmentId });
+    if (!appointment) {
+      return sendError(res, 'Appointment not found', 404);
+    }
+
+    let updateData = {};
+
+    if (doctorId) {
+      // Validate doctor exists
+      const doctor = await User.findOne({
+        _id: doctorId,
+        role: 'doctor',
+        isActive: true
+      }).select('profile doctorDetails');
+
+      if (!doctor) {
+        return sendError(res, 'Doctor not found or inactive', 400);
+      }
+
+      // Assign doctor to appointment
+      updateData = {
+        doctorId: doctorId,
+        assignedBy: req.user.id,
+        assignedAt: new Date(),
+        assignmentNotes: notes,
+        lastModifiedBy: req.user.id,
+        updatedAt: new Date()
+      };
+
+      console.log('Assigning appointment to doctor:', doctor.profile.firstName, doctor.profile.lastName);
+    } else {
+      // Remove assignment (unassign)
+      updateData = {
+        $unset: {
+          doctorId: '',
+          assignedBy: '',
+          assignedAt: '',
+          assignmentNotes: ''
+        },
+        lastModifiedBy: req.user.id,
+        updatedAt: new Date()
+      };
+
+      console.log('Unassigning appointment');
+    }
+
+    const updatedAppointment = await Appointment.findOneAndUpdate(
+      { appointmentId },
+      updateData,
+      { new: true }
+    )
+    .populate('doctorId', 'profile doctorDetails')
+    .populate('assignedBy', 'profile')
+    .populate('createdBy', 'profile')
+    .populate('lastModifiedBy', 'profile');
+
+    // ✅ Update patient's appointment list to reflect doctor assignment
+    await Patient.findOneAndUpdate(
+      { 
+        patientId: appointment.patientId,
+        'appointments.list.appointmentId': appointmentId
+      },
+      {
+        $set: {
+          'appointments.list.$.doctorId': doctorId || null,
+          'appointments.list.$.doctorName': doctorId ? 
+            `Dr. ${updatedAppointment.doctorId.profile.firstName} ${updatedAppointment.doctorId.profile.lastName}` : 
+            null
+        }
+      }
+    );
+
+    console.log('Doctor assignment updated successfully');
+
+    const message = doctorId 
+      ? `Appointment assigned to Dr. ${updatedAppointment.doctorId.profile.firstName} ${updatedAppointment.doctorId.profile.lastName}` 
+      : 'Appointment unassigned successfully';
+
+    sendSuccess(res, {
+      appointment: updatedAppointment,
+      message
+    }, message);
+
+  } catch (error) {
+    console.error('=== ASSIGN DOCTOR TO APPOINTMENT ERROR ===');
+    console.error('Error:', error);
+    sendError(res, 'Error assigning doctor to appointment', 500, error.message);
+  }
+};
+
 // Helper function to validate required fields
 const validateRequired = (requiredFields, body) => {
   return requiredFields.filter(field => !body[field]);

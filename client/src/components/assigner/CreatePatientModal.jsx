@@ -48,7 +48,6 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     validatePersonalInfo,
     validateAppointmentDetails,
     calculateAge,
-    // NEW: Document functions
     addDocument,
     removeDocument,
     updateDocument,
@@ -138,12 +137,11 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
           emergencyContact: patient.emergencyContact,
           medicalHistory: patient.medicalHistory,
           photo: patient.photo,
-          documents: patient.documents || [] // Include existing documents
+          documents: [] // ✅ FIXED: Start with empty documents for new appointment
         });
         
         setPatientExists(true);
-        // 🔥 FIXED: Go to documents step instead of directly to visit
-        setStep('documents'); // Allow user to add new documents even for existing patients
+        setStep('documents'); // Allow user to add documents for this appointment
       } else {
         // New patient - collect all details
         console.log('New patient, collecting details');
@@ -188,6 +186,7 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
   const handleSubmit = async () => {
     console.log('Submitting patient and appointment data...');
     console.log('Form data being submitted:', formData);
+    console.log('Documents to be submitted:', formData.documents);
     
     if (!validateAppointmentDetails()) {
       console.log('Validation failed:', errors);
@@ -199,26 +198,27 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     try {
       let patientResponse;
 
-      // Step 1: Create/update patient (for both new AND existing patients if documents are added)
-      const hasNewDocuments = formData.documents && formData.documents.length > 0;
-      
-      if (!patientExists || hasNewDocuments) {
+      // ✅ FIXED: Only create/update patient if it's a NEW patient
+      // For existing patients, we'll attach documents to the appointment directly
+      if (!patientExists) {
         const patientPayload = {
           patientId: phoneNumber,
           personalInfo: formData.personalInfo,
           contactInfo: formData.contactInfo,
           emergencyContact: formData.emergencyContact,
           medicalHistory: formData.medicalHistory,
-          photo: formData.photo,
-          documents: formData.documents || [] // Include documents (new or existing)
+          photo: formData.photo
+          // ✅ REMOVED: No documents in patient payload
         };
 
-        console.log('Patient payload (new patient or has documents):', patientPayload);
+        console.log('Creating new patient:', patientPayload);
         patientResponse = await apiClient.post('/patients', patientPayload);
         console.log('Patient response:', patientResponse.data);
+      } else {
+        console.log('Patient exists, skipping patient creation');
       }
 
-      // Step 2: Create appointment with correct format
+      // ✅ FIXED: Create appointment with documents attached
       const appointmentPayload = {
         scheduledDate: formData.appointment.date,
         scheduledTime: formData.appointment.time,
@@ -227,7 +227,9 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
         duration: formData.appointment.duration || 30,
         doctorId: formData.appointment.doctorId || null,
         
-        // Medical data
+        // ✅ NEW: Include documents in appointment payload
+        documents: formData.documents || [],
+        
         chiefComplaints: {
           primary: formData.appointment.complaints?.chief || '',
           duration: formData.appointment.complaints?.duration || '',
@@ -277,13 +279,16 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
         doctorNotes: formData.appointment.doctorNotes || ''
       };
 
-      console.log('Creating appointment with properly structured data:', appointmentPayload);
+      console.log('Creating appointment with documents:', appointmentPayload);
+      console.log('Number of documents attached:', appointmentPayload.documents.length);
+      
       const appointmentResponse = await apiClient.post(
         `/patients/${phoneNumber}/appointments`,
         appointmentPayload
       );
 
       console.log('Appointment response:', appointmentResponse.data);
+      console.log('Documents in created appointment:', appointmentResponse.data.data?.documents?.length || 0);
 
       if (appointmentResponse.data.success) {
         // 🔥 RESET THE FORM STATE AFTER SUCCESS

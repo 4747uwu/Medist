@@ -4,7 +4,6 @@ const appointmentSchema = new mongoose.Schema({
   appointmentId: {
     type: String,
     unique: true,
-    // required: true
   },
   
   // Patient reference
@@ -35,12 +34,12 @@ const appointmentSchema = new mongoose.Schema({
   
   scheduledTime: {
     type: String,
-    required: true // Format: "09:30"
+    required: true
   },
   
   duration: {
     type: Number,
-    default: 30, // minutes
+    default: 30,
     min: 15,
     max: 120
   },
@@ -63,6 +62,43 @@ const appointmentSchema = new mongoose.Schema({
     enum: ['Scheduled', 'Confirmed', 'In-Progress', 'Completed', 'Cancelled', 'No-Show', 'Rescheduled'],
     default: 'Scheduled'
   },
+  
+  // ✅ NEW: Documents attached to this specific appointment
+  documents: [{
+    documentType: {
+      type: String,
+      enum: ['Lab Report', 'X-Ray', 'Prescription', 'Medical Certificate', 'Referral Letter', 'Scan Report', 'Other'],
+      required: true
+    },
+    fileName: {
+      type: String,
+      required: true
+    },
+    fileUrl: {
+      type: String,
+      required: true
+    },
+    fileSize: {
+      type: Number,
+      required: true
+    },
+    mimeType: {
+      type: String,
+      required: true
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    },
+    uploadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    description: {
+      type: String,
+      default: ''
+    }
+  }],
   
   // Chief complaints and reason
   chiefComplaints: {
@@ -116,18 +152,24 @@ const appointmentSchema = new mongoose.Schema({
     differentialDiagnosis: [String]
   },
   
-  // Treatment and prescription reference
-  treatment: {
+  // ✅ UPDATED: Multiple prescriptions per appointment
+  prescriptions: [{
     prescriptionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Prescription'
     },
-    prescriptionIssued: {
-      type: Boolean,
-      default: false
+    prescriptionCode: String,
+    issuedAt: Date,
+    issuedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     },
-    prescriptionDate: Date
-  },
+    status: {
+      type: String,
+      enum: ['Active', 'Completed', 'Cancelled', 'Expired'],
+      default: 'Active'
+    }
+  }],
   
   // Follow-up planning
   followUp: {
@@ -141,7 +183,7 @@ const appointmentSchema = new mongoose.Schema({
     notes: String
   },
   
-  // ADDED: Assignment tracking fields
+  // Assignment tracking
   assignedAt: Date,
   assignedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -149,10 +191,10 @@ const appointmentSchema = new mongoose.Schema({
   },
   assignmentNotes: String,
   
-  // ADDED: Completion tracking
+  // Completion tracking
   completedAt: Date,
   
-  // Created and assigned by
+  // Created and modified by
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -168,21 +210,70 @@ const appointmentSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for performance
+// Indexes
 appointmentSchema.index({ appointmentId: 1 });
 appointmentSchema.index({ patientId: 1 });
 appointmentSchema.index({ doctorId: 1 });
 appointmentSchema.index({ labId: 1 });
 appointmentSchema.index({ scheduledDate: 1 });
 appointmentSchema.index({ status: 1 });
-appointmentSchema.index({ 'treatment.prescriptionId': 1 });
-appointmentSchema.index({ assignedBy: 1 }); // NEW
-appointmentSchema.index({ assignedAt: 1 }); // NEW
+appointmentSchema.index({ 'prescriptions.prescriptionId': 1 });
+appointmentSchema.index({ assignedBy: 1 });
+appointmentSchema.index({ assignedAt: 1 });
 
 // Compound indexes
 appointmentSchema.index({ doctorId: 1, scheduledDate: 1 });
 appointmentSchema.index({ patientId: 1, scheduledDate: -1 });
 appointmentSchema.index({ labId: 1, status: 1 });
+
+// ✅ NEW: Method to add prescription to appointment
+appointmentSchema.methods.addPrescription = function(prescriptionData) {
+  this.prescriptions.push({
+    prescriptionId: prescriptionData._id,
+    prescriptionCode: prescriptionData.prescriptionId,
+    issuedAt: new Date(),
+    issuedBy: prescriptionData.doctorId,
+    status: 'Active'
+  });
+  return this.save();
+};
+
+// ✅ NEW: Method to add document to appointment
+appointmentSchema.methods.addDocument = function(documentData) {
+  this.documents.push({
+    documentType: documentData.documentType || 'Other',
+    fileName: documentData.fileName,
+    fileUrl: documentData.fileUrl,
+    fileSize: documentData.fileSize,
+    mimeType: documentData.mimeType,
+    uploadedAt: documentData.uploadedAt || new Date(),
+    uploadedBy: documentData.uploadedBy,
+    description: documentData.description || ''
+  });
+  return this.save();
+};
+
+// ✅ Method to remove document from appointment
+appointmentSchema.methods.removeDocument = function(documentId) {
+  this.documents = this.documents.filter(
+    doc => doc._id.toString() !== documentId.toString()
+  );
+  return this.save();
+};
+
+// ✅ Method to update document in appointment
+appointmentSchema.methods.updateDocument = function(documentId, updateData) {
+  const docIndex = this.documents.findIndex(
+    doc => doc._id.toString() === documentId.toString()
+  );
+  
+  if (docIndex !== -1) {
+    if (updateData.documentType) this.documents[docIndex].documentType = updateData.documentType;
+    if (updateData.description !== undefined) this.documents[docIndex].description = updateData.description;
+  }
+  
+  return this.save();
+};
 
 // Static method to generate appointment ID
 appointmentSchema.statics.generateAppointmentId = async function(labId) {

@@ -11,10 +11,10 @@ import {
   updateAppointment,
   getAppointmentById,
   getPatientWithAppointments,
-  getPatientDocuments,
-  addPatientDocument,
-  deletePatientDocument,
-  updatePatientDocument
+  // getPatientDocuments,
+  // addPatientDocument,
+  // deletePatientDocument,
+  // updatePatientDocument
 } from '../controllers/patient.controller.js';
 import { protect, authorize } from '../utils/auth.js';
 
@@ -41,9 +41,9 @@ router.get('/appointments/:appointmentId', getAppointmentById);
 router.put('/appointments/:appointmentId', authorize('doctor', 'assigner'), updateAppointment);
 
 // Document management routes
-router.get('/:patientId/documents', protect, getPatientDocuments);
-router.post('/:patientId/documents', protect, addPatientDocument);
-router.put('/:patientId/documents/:documentId', protect, updatePatientDocument);
-router.delete('/:patientId/documents/:documentId', protect, deletePatientDocument);
+// router.get('/:patientId/documents', protect, getPatientDocuments);
+// router.post('/:patientId/documents', protect, addPatientDocument);
+// router.put('/:patientId/documents/:documentId', protect, updatePatientDocument);
+// router.delete('/:patientId/documents/:documentId', protect, deletePatientDocument);
 
 export default router;

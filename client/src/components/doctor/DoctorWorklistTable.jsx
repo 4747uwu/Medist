@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext'; // ✅ ADD: Import useAuth
-import PrescriptionModal from './PrescriptionModal';
+import { useAuth } from '../../contexts/AuthContext';
 import ManageDocumentsModal from '../common/ManageDocumentsModal';
-import AppointmentListModal from '../common/AppointmentListModal'; // ✅ ADD: Import AppointmentListModal
+import DoctorAppointmentModal from './DoctorAppointmentModal'; // ✅ Use the updated modal
 
 const DoctorWorklistTable = ({ 
   patients = [], 
@@ -15,7 +14,7 @@ const DoctorWorklistTable = ({
   onWorkflowFilterChange,
   stats = {}
 }) => {
-  const { user } = useAuth(); // ✅ ADD: Get current user
+  const { user } = useAuth();
   const [columnConfig, setColumnConfig] = useState({
     status: true,
     patientId: true,
@@ -26,23 +25,17 @@ const DoctorWorklistTable = ({
     date: true,
     report: true,
     documents: true,
-    appointments: true, // ✅ ADD: Add appointments column
-    actions: true
+    appointments: true,
   });
 
-  const [showColumnConfig, setShowColumnConfig] = useState(false);
-  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
-  const [selectedPatientForPrescription, setSelectedPatientForPrescription] = useState(null);
-  
   // Documents modal state
   const [selectedPatientForDocuments, setSelectedPatientForDocuments] = useState(null);
   const [showDocumentsModal, setShowDocumentsModal] = useState(false);
 
-  // ✅ ADD: Appointments modal state
+  // ✅ Appointments modal state
   const [selectedPatientForAppointments, setSelectedPatientForAppointments] = useState(null);
-  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [showDoctorAppointmentModal, setShowDoctorAppointmentModal] = useState(false);
 
-  // ✅ ADD: Check if current user is a doctor
   const isDoctor = user?.role === 'doctor';
 
   const getStatusIcon = (status) => {
@@ -88,7 +81,14 @@ const DoctorWorklistTable = ({
   };
 
   const handleStatusUpdate = (patient, newStatus) => {
-    onUpdateStatus && onUpdateStatus(patient.patientId, newStatus);
+    // ✅ UPDATED: Update appointment status, not patient status
+    const latestAppointment = patient.latestAppointment || patient.doctorAppointments?.[0];
+    
+    if (latestAppointment) {
+      onUpdateStatus && onUpdateStatus(latestAppointment.appointmentId, newStatus);
+    } else {
+      console.error('No appointment found for patient:', patient.patientId);
+    }
   };
 
   const handleCreatePrescription = (patient) => {
@@ -126,23 +126,21 @@ const DoctorWorklistTable = ({
     console.log('Documents operation successful:', result);
   };
 
-  // ✅ ADD: Appointment handlers
+  // ✅ Appointment handlers
   const handleAppointmentClick = (patient) => {
     setSelectedPatientForAppointments(patient);
-    setShowAppointmentModal(true);
+    setShowDoctorAppointmentModal(true);
   };
 
   const handleAppointmentModalClose = () => {
-    setShowAppointmentModal(false);
+    setShowDoctorAppointmentModal(false);
     setSelectedPatientForAppointments(null);
   };
 
   const handleAppointmentSuccess = (result) => {
     console.log('Appointment operation successful:', result);
-    // Refresh data if needed
-    if (onUpdateStatus) {
-      // Trigger a refresh of the patient list
-      onUpdateStatus(result.patient?.patientId, result.patient?.workflowStatus);
+    if (onUpdateStatus && result.patient) {
+      onUpdateStatus(result.patient.patientId, result.patient.workflowStatus);
     }
   };
 
@@ -161,7 +159,7 @@ const DoctorWorklistTable = ({
 
   return (
     <>
-      {/* Table with appointments column */}
+      {/* Table */}
       <div className="h-screen flex flex-col bg-white border border-gray-300 overflow-hidden">
         {/* WORKFLOW FILTER HEADER */}
         {showWorkflowFilter && (
@@ -489,19 +487,6 @@ const DoctorWorklistTable = ({
         </div>
       </div>
 
-      {/* ✅ FIXED: Show Prescription Modal only for doctors */}
-      {isDoctor && (
-        <PrescriptionModal
-          isOpen={showPrescriptionModal}
-          onClose={() => {
-            setShowPrescriptionModal(false);
-            setSelectedPatientForPrescription(null);
-          }}
-          patient={selectedPatientForPrescription}
-          onSuccess={handlePrescriptionSuccess}
-        />
-      )}
-
       {/* Documents Modal */}
       <ManageDocumentsModal
         isOpen={showDocumentsModal}
@@ -510,9 +495,9 @@ const DoctorWorklistTable = ({
         onSuccess={handleDocumentsSuccess}
       />
 
-      {/* ✅ ADD: Appointments Modal */}
-      <AppointmentListModal
-        isOpen={showAppointmentModal}
+      {/* ✅ Doctor Appointments Modal - Uses PrescriptionPage for creating prescriptions */}
+      <DoctorAppointmentModal
+        isOpen={showDoctorAppointmentModal}
         onClose={handleAppointmentModalClose}
         patient={selectedPatientForAppointments}
         onSuccess={handleAppointmentSuccess}

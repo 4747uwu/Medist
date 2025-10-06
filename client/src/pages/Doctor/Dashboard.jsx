@@ -292,32 +292,10 @@ const DoctorDashboard = () => {
         </div>
 
         {/* Results Header */}
-        <div className="flex-shrink-0 px-4 py-2 bg-gray-50 border-b border-gray-200">
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Assigned Patients
-                </h2>
-                <p className="text-xs text-gray-500">
-                  Dr. {user?.profile?.firstName} {user?.profile?.lastName}
-                </p>
-              </div>
-            </div>
-            <span className="text-sm text-gray-400">•</span>
-            <span className="text-sm text-gray-600">
-              {pagination.totalCount} total patients
-            </span>
-          </div>
-        </div>
+        
 
         {/* Table Container */}
-        <div className="flex-1 overflow-hidden px-4">
+        <div className="flex-1 overflow-hidden px-0">
           <DoctorWorklistTable
             patients={patients}
             loading={loading}

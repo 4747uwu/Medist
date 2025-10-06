@@ -3,24 +3,29 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiClient } from '../../services/api';
 import AppointmentAssignmentModal from './AppointmentAssignmentModal';
 import SeePrescriptionModal from './SeePrescriptionModal';
+import ManageDocumentsModal from './ManageDocumentsModal'; // ✅ Import ManageDocumentsModal
 
 const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
-  const { user } = useAuth(); // Get current user to check role
+  const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [error, setError] = useState('');
 
-  // Assignment modal state (only for assigners)
+  // Assignment modal state
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [selectedAppointmentForAssignment, setSelectedAppointmentForAssignment] = useState(null);
   
+  // Prescription modal state
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [selectedPatientForPrescription, setSelectedPatientForPrescription] = useState(null);
-  const [selectedAppointmentForPrescription, setSelectedAppointmentForPrescription] = useState(null); // ✅ New state for selected appointment
+  const [selectedAppointmentForPrescription, setSelectedAppointmentForPrescription] = useState(null);
 
-  // Check if current user is an assigner
+  // ✅ NEW: Documents modal state
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
+  const [selectedAppointmentForDocuments, setSelectedAppointmentForDocuments] = useState(null);
+
   const isAssigner = user?.role === 'assigner';
 
   useEffect(() => {
@@ -37,6 +42,7 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
       if (response.data.success) {
         setAppointments(response.data.data || []);
       }
+      console.log(response)
     } catch (error) {
       console.error('Error fetching appointments:', error);
       setError('Failed to fetch appointments');
@@ -45,7 +51,6 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
     }
   };
 
-  // Handle appointment-specific doctor assignment (only for assigners)
   const handleAssignDoctor = (appointment) => {
     if (!isAssigner) return;
     setSelectedAppointmentForAssignment(appointment);
@@ -62,17 +67,20 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
     });
   };
 
-     
-
-  // Handle prescription management
   const handleManagePrescription = (appointment) => {
-    console.log('Opening prescription modal for appointment:', appointment.appointmentId); // ✅ Add logging
+    console.log('Opening prescription modal for appointment:', appointment.appointmentId);
     setSelectedPatientForPrescription(patient.patientId);
-    setSelectedAppointmentForPrescription(appointment.appointmentId); // ✅ Pass appointment ID
+    setSelectedAppointmentForPrescription(appointment.appointmentId);
     setShowPrescriptionModal(true);
   };
 
-  // Handle appointment status updates (only for assigners)
+  // ✅ NEW: Handle documents modal
+  const handleManageDocuments = (appointment) => {
+    console.log('Opening documents modal for appointment:', appointment.appointmentId);
+    setSelectedAppointmentForDocuments(appointment);
+    setShowDocumentsModal(true);
+  };
+
   const handleStatusUpdate = async (appointment, newStatus) => {
     if (!isAssigner) return;
     
@@ -90,8 +98,6 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
       setError('Failed to update appointment status');
     }
   };
-
-  // console.log(appointment)
 
   const getStatusColor = (status) => {
     const statusColors = {
@@ -116,7 +122,6 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
     };
     return typeColors[type] || 'bg-gray-50 text-gray-600';
   };
-  console.log(appointments)
 
   const formatDateTime = (date, time) => {
     if (!date) return 'Not scheduled';
@@ -133,7 +138,7 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
 
   return (
     <>
-      {/* Main Modal */}
+      {/* Main Modal - Content remains the same but add Documents button */}
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
         <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] border border-gray-200">
           {/* Header */}
@@ -357,6 +362,21 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
                           <span>Prescriptions</span>
                         </button>
 
+                        {/* ✅ NEW: Documents Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleManageDocuments(appointment);
+                          }}
+                          className="px-3 py-2 text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg transition-all duration-200 flex items-center space-x-2 border border-orange-200"
+                          title={`${appointment.documents?.length || 0} documents`}
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span>Documents ({appointment.documents?.length || 0})</span>
+                        </button>
+
                         {/* View Details Button - Always visible */}
                         <button
                           onClick={(e) => {
@@ -477,6 +497,23 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
         patientId={selectedPatientForPrescription}
         appointmentId={selectedAppointmentForPrescription} // ✅ Pass appointment ID
       />
+
+      {/* ✅ NEW: Documents Modal */}
+      {showDocumentsModal && selectedAppointmentForDocuments && (
+        <ManageDocumentsModal
+          isOpen={showDocumentsModal}
+          onClose={() => {
+            setShowDocumentsModal(false);
+            setSelectedAppointmentForDocuments(null);
+            fetchAppointments(); // Refresh to update document counts
+          }}
+          appointment={selectedAppointmentForDocuments}
+          patient={patient}
+          onSuccess={() => {
+            fetchAppointments(); // Refresh appointments when documents change
+          }}
+        />
+      )}
     </>
   );
 };

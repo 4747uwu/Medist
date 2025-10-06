@@ -64,7 +64,7 @@ export const createOrUpdatePatient = async (req, res) => {
       emergencyContact,
       medicalHistory,
       photo,
-      documents // ✅ REMOVED: No longer storing in patient
+      documents // NEW: Add documents field
     } = req.body;
 
     // Validate required fields
@@ -85,17 +85,33 @@ export const createOrUpdatePatient = async (req, res) => {
       return sendError(res, 'Lab ID not found', 400);
     }
 
-    // ✅ REMOVED: Document processing - documents will be stored in appointments
+    // Process documents if provided
+    let processedDocuments = [];
+    if (documents && Array.isArray(documents)) {
+      processedDocuments = documents.map(doc => ({
+        ...doc,
+        uploadedBy: req.user.id,
+        uploadedAt: new Date()
+      }));
+    }
 
     // Check if patient exists
     const existingPatient = await Patient.findOne({ patientId });
 
     if (existingPatient) {
-      console.log('Patient exists, updating with new registration date');
+      console.log('Patient exists, updating with new registration date and documents');
       
       const currentDate = new Date();
       
-      // Update existing patient (NO documents field)
+      // Merge existing documents with new ones (avoid duplicates)
+      let mergedDocuments = [...(existingPatient.documents || [])];
+      if (processedDocuments.length > 0) {
+        // Add new documents to existing ones
+        mergedDocuments = [...mergedDocuments, ...processedDocuments];
+        console.log(`Adding ${processedDocuments.length} new documents to existing ${existingPatient.documents?.length || 0} documents`);
+      }
+      
+      // Update existing patient
       await Patient.collection.updateOne(
         { patientId },
         {
@@ -121,7 +137,7 @@ export const createOrUpdatePatient = async (req, res) => {
             'medicalHistory.familyHistory': medicalHistory.familyHistory || existingPatient.medicalHistory.familyHistory,
             
             ...(photo && { photo }),
-            // ✅ REMOVED: documents field
+            documents: mergedDocuments, // 🔥 Use merged documents
             
             labId,
             lastActivity: currentDate,
@@ -134,13 +150,16 @@ export const createOrUpdatePatient = async (req, res) => {
       );
 
       const patient = await Patient.findOne({ patientId });
-      console.log('Patient updated with new registration date:', patient.registrationDate);
+      console.log('Patient updated with new registration date and documents:', {
+        registrationDate: patient.registrationDate,
+        documentCount: patient.documents?.length || 0
+      });
       
       sendSuccess(res, patient, 'Patient updated with new visit', 201);
     } else {
       console.log('Creating new patient');
       
-      // Create new patient (NO documents field)
+      // Create new patient
       const patientData = {
         patientId,
         personalInfo: {
@@ -151,7 +170,7 @@ export const createOrUpdatePatient = async (req, res) => {
         emergencyContact,
         medicalHistory,
         photo,
-        // ✅ REMOVED: documents field
+        documents: processedDocuments, // NEW: Include documents
         labId,
         workflowStatus: 'New',
         lastActivity: new Date(),
@@ -242,17 +261,6 @@ export const createAppointment = async (req, res) => {
     console.log('Parsed appointment date:', appointmentDate);
     console.log('Scheduled time:', scheduledTime);
 
-    // ✅ NEW: Process documents if provided - store in appointment
-    let processedDocuments = [];
-    if (appointmentData.documents && Array.isArray(appointmentData.documents)) {
-      processedDocuments = appointmentData.documents.map(doc => ({
-        ...doc,
-        uploadedBy: req.user.id,
-        uploadedAt: new Date()
-      }));
-      console.log(`Processing ${processedDocuments.length} documents for appointment`);
-    }
-
     // Prepare complete appointment data
     const completeAppointmentData = {
       patientId,
@@ -268,9 +276,6 @@ export const createAppointment = async (req, res) => {
       
       // Doctor assignment (if provided)
       doctorId: appointmentData.doctorId || null,
-      
-      // ✅ NEW: Add documents to appointment
-      documents: processedDocuments,
       
       // Chief complaints - FIXED: Use correct path
       chiefComplaints: {
@@ -330,7 +335,6 @@ export const createAppointment = async (req, res) => {
 
     // Create appointment
     const appointment = await Appointment.create(completeAppointmentData);
-    console.log(`Appointment created with ${processedDocuments.length} documents`);
 
     // Update patient's appointment tracking
     await patient.addAppointment({
@@ -350,7 +354,7 @@ export const createAppointment = async (req, res) => {
       {
         workflowStatus: appointment.doctorId ? 'Assigned' : 'Revisited',
         lastActivity: new Date(),
-        registrationDate: new Date()
+        registrationDate: new Date() // ✅ ADD: Update registration date
       }
     );
 
@@ -371,12 +375,13 @@ export const getPatientAppointments = async (req, res) => {
   try {
     const { patientId } = req.params;
     
+    // ✅ FIXED: Remove .populate('treatment.prescriptionId') since treatment field doesn't exist
+    // Use the new prescriptions array structure instead
     const appointments = await Appointment.find({ patientId })
       .populate('doctorId', 'profile doctorDetails')
       .populate('assignedBy', 'profile')
       .populate('createdBy', 'profile')
       .populate('lastModifiedBy', 'profile')
-      .populate('documents.uploadedBy', 'profile.firstName profile.lastName') // ✅ NEW: Populate document uploader
       .populate({
         path: 'prescriptions.prescriptionId',
         model: 'Prescription',
@@ -426,6 +431,7 @@ export const updateAppointment = async (req, res) => {
           updateData.treatment?.prescriptionId
         );
         
+        // ✅ ADD: Update registration date when appointment is updated
         await Patient.findOneAndUpdate(
           { patientId: appointment.patientId },
           {
@@ -442,6 +448,28 @@ export const updateAppointment = async (req, res) => {
     sendError(res, 'Error updating appointment', 500, error.message);
   }
 };
+
+// // @desc    Get appointment by ID
+// // @route   GET /api/appointments/:appointmentId
+// // @access  Private
+// export const getAppointmentById = async (req, res) => {
+//   try {
+//     const { appointmentId } = req.params;
+//     const appointment = await Appointment.findOne({ appointmentId })
+//       .populate('doctorId', 'profile')
+//       .populate('patientId')
+//       .populate('treatment.prescriptionId');
+
+//     if (!appointment) {
+//       return sendError(res, 'Appointment not found', 404);
+//     }
+
+//     sendSuccess(res, appointment, 'Appointment retrieved successfully');
+//   } catch (error) {
+//     console.error('Error fetching appointment:', error);
+//     sendError(res, 'Error fetching appointment', 500, error.message);
+//   }
+// };
 
 // @desc    Create new visit for patient
 // @route   POST /api/patients/:patientId/visits
@@ -463,7 +491,7 @@ export const createVisit = async (req, res) => {
     }
 
     // Get user's lab ID
-    let labId = patient.labId;
+    let labId = patient.labId; // Use patient's lab ID
 
     // Generate visit ID
     const visitId = await Visit.generateVisitId(patientId);
@@ -473,6 +501,7 @@ export const createVisit = async (req, res) => {
       visitId,
       patientId,
       labId,
+      // Appointment details
       appointment: {
         date: visitData.appointment?.date || new Date().toISOString().split('T')[0],
         time: visitData.appointment?.time || new Date().toTimeString().slice(0, 5),
@@ -480,6 +509,7 @@ export const createVisit = async (req, res) => {
         doctorName: visitData.appointment?.doctorName || '',
         specialization: visitData.appointment?.specialization || ''
       },
+      // Vitals
       vitals: {
         weight: visitData.vitals?.weight || { value: '', unit: 'kg' },
         temperature: visitData.vitals?.temperature || { value: '', unit: '°F' },
@@ -488,25 +518,30 @@ export const createVisit = async (req, res) => {
         oxygenSaturation: visitData.vitals?.oxygenSaturation || { value: '', unit: '%' },
         bloodSugar: visitData.vitals?.bloodSugar || { value: '', type: 'Random', unit: 'mg/dL' }
       },
+      // Complaints
       complaints: {
         chief: visitData.complaints?.chief || '',
         duration: visitData.complaints?.duration || '',
         pastHistoryRelevant: visitData.complaints?.pastHistoryRelevant || ''
       },
+      // Examination
       examination: {
         physicalFindings: visitData.examination?.physicalFindings || '',
         provisionalDiagnosis: visitData.examination?.provisionalDiagnosis || '',
         differentialDiagnosis: visitData.examination?.differentialDiagnosis || []
       },
+      // Investigations
       investigations: {
         testsRecommended: visitData.investigations?.testsRecommended || [],
         pastReportsReviewed: visitData.investigations?.pastReportsReviewed || []
       },
+      // Treatment
       treatment: {
         medicines: visitData.treatment?.medicines || [],
         lifestyleAdvice: visitData.treatment?.lifestyleAdvice || '',
         dietSuggestions: visitData.treatment?.dietSuggestions || ''
       },
+      // Follow up
       followUp: {
         nextAppointmentDate: visitData.followUp?.nextAppointmentDate || '',
         instructions: visitData.followUp?.instructions || '',
@@ -632,10 +667,12 @@ export const getVisitById = async (req, res) => {
   }
 };
 
+
 export const getAppointmentById = async (req, res) => {
   try {
     const { patientId, appointmentId } = req.params;
     
+    // ✅ FIXED: Update to use new schema structure
     const appointment = await Appointment.findOne({ 
       patientId, 
       appointmentId 
@@ -644,7 +681,6 @@ export const getAppointmentById = async (req, res) => {
       .populate('assignedBy', 'profile')
       .populate('createdBy', 'profile')
       .populate('lastModifiedBy', 'profile')
-      .populate('documents.uploadedBy', 'profile.firstName profile.lastName') // ✅ NEW: Populate document uploader
       .populate({
         path: 'prescriptions.prescriptionId',
         model: 'Prescription',
@@ -681,13 +717,12 @@ export const getPatientWithAppointments = async (req, res) => {
       return sendError(res, 'Patient not found', 404);
     }
 
-    // Get appointments with documents populated
+    // Get appointments with correct populate
     const appointments = await Appointment.find({ patientId })
       .populate('doctorId', 'profile doctorDetails')
       .populate('assignedBy', 'profile')
       .populate('createdBy', 'profile')
       .populate('lastModifiedBy', 'profile')
-      .populate('documents.uploadedBy', 'profile.firstName profile.lastName') // ✅ NEW: Populate document uploader
       .populate({
         path: 'prescriptions.prescriptionId',
         model: 'Prescription',
@@ -731,5 +766,185 @@ export const getPatientWithAppointments = async (req, res) => {
   } catch (error) {
     console.error('Error fetching patient with appointments:', error);
     sendError(res, 'Error fetching patient data', 500, error.message);
+  }
+};
+
+// @desc    Get patient documents
+// @route   GET /api/patients/:patientId/documents
+// @access  Private
+export const getPatientDocuments = async (req, res) => {
+  console.log('=== GET PATIENT DOCUMENTS REQUEST START ===');
+  console.log('Patient ID:', req.params.patientId);
+
+  try {
+    const { patientId } = req.params;
+
+    const patient = await Patient.findOne({ patientId }).select('documents');
+    
+    if (!patient) {
+      return sendError(res, 'Patient not found', 404);
+    }
+
+    const documents = patient.documents || [];
+    
+    console.log(`Found ${documents.length} documents for patient ${patientId}`);
+    sendSuccess(res, documents, 'Documents retrieved successfully');
+
+  } catch (error) {
+    console.error('=== GET PATIENT DOCUMENTS ERROR ===');
+    console.error('Error:', error);
+    sendError(res, 'Error fetching patient documents', 500, error.message);
+  }
+};
+
+// @desc    Add document to patient
+// @route   POST /api/patients/:patientId/documents
+// @access  Private (Assigner, Clinic only)
+export const addPatientDocument = async (req, res) => {
+  console.log('=== ADD PATIENT DOCUMENT REQUEST START ===');
+  console.log('Patient ID:', req.params.patientId);
+  console.log('User role:', req.user?.role);
+
+  try {
+    const { patientId } = req.params;
+    const documentData = req.body;
+
+    // Check permissions - only assigners and clinics can upload
+    if (req.user.role !== 'assigner' && req.user.role !== 'clinic') {
+      return sendError(res, 'You do not have permission to upload documents', 403);
+    }
+
+    // Validate required fields
+    const missing = validateRequired(['documentType', 'fileName', 'fileUrl', 'fileSize', 'mimeType'], documentData);
+    if (missing.length > 0) {
+      return sendError(res, `Missing required fields: ${missing.join(', ')}`, 400);
+    }
+
+    const patient = await Patient.findOne({ patientId });
+    
+    if (!patient) {
+      return sendError(res, 'Patient not found', 404);
+    }
+
+    // Prepare document data with metadata
+    const newDocument = {
+      ...documentData,
+      uploadedBy: req.user.id,
+      uploadedAt: new Date()
+    };
+
+    // Add document to patient
+    await Patient.findOneAndUpdate(
+      { patientId },
+      {
+        $push: { documents: newDocument },
+        lastActivity: new Date()
+      }
+    );
+
+    console.log('Document added successfully');
+    sendSuccess(res, newDocument, 'Document added successfully', 201);
+
+  } catch (error) {
+    console.error('=== ADD PATIENT DOCUMENT ERROR ===');
+    console.error('Error:', error);
+    sendError(res, 'Error adding document', 500, error.message);
+  }
+};
+
+// @desc    Delete patient document
+// @route   DELETE /api/patients/:patientId/documents/:documentId
+// @access  Private (Assigner, Clinic only)
+export const deletePatientDocument = async (req, res) => {
+  console.log('=== DELETE PATIENT DOCUMENT REQUEST START ===');
+  console.log('Patient ID:', req.params.patientId);
+  console.log('Document ID:', req.params.documentId);
+  console.log('User role:', req.user?.role);
+
+  try {
+    const { patientId, documentId } = req.params;
+
+    // Check permissions - only assigners and clinics can delete
+    if (req.user.role !== 'assigner' && req.user.role !== 'clinic') {
+      return sendError(res, 'You do not have permission to delete documents', 403);
+    }
+
+    const patient = await Patient.findOne({ patientId });
+    
+    if (!patient) {
+      return sendError(res, 'Patient not found', 404);
+    }
+
+    // Remove document from patient
+    const result = await Patient.findOneAndUpdate(
+      { patientId },
+      {
+        $pull: { documents: { _id: documentId } },
+        lastActivity: new Date()
+      },
+      { new: true }
+    );
+
+    if (!result) {
+      return sendError(res, 'Document not found', 404);
+    }
+
+    console.log('Document deleted successfully');
+    sendSuccess(res, { documentId }, 'Document deleted successfully');
+
+  } catch (error) {
+    console.error('=== DELETE PATIENT DOCUMENT ERROR ===');
+    console.error('Error:', error);
+    sendError(res, 'Error deleting document', 500, error.message);
+  }
+};
+
+// @desc    Update patient document
+// @route   PUT /api/patients/:patientId/documents/:documentId
+// @access  Private (Assigner, Clinic only)
+export const updatePatientDocument = async (req, res) => {
+  console.log('=== UPDATE PATIENT DOCUMENT REQUEST START ===');
+  console.log('Patient ID:', req.params.patientId);
+  console.log('Document ID:', req.params.documentId);
+
+  try {
+    const { patientId, documentId } = req.params;
+    const updateData = req.body;
+
+    // Check permissions - only assigners and clinics can update
+    if (req.user.role !== 'assigner' && req.user.role !== 'clinic') {
+      return sendError(res, 'You do not have permission to update documents', 403);
+    }
+
+    const patient = await Patient.findOne({ patientId });
+    
+    if (!patient) {
+      return sendError(res, 'Patient not found', 404);
+    }
+
+    // Update document
+    const result = await Patient.findOneAndUpdate(
+      { patientId, 'documents._id': documentId },
+      {
+        $set: {
+          'documents.$.description': updateData.description,
+          'documents.$.documentType': updateData.documentType,
+          lastActivity: new Date()
+        }
+      },
+      { new: true }
+    );
+
+    if (!result) {
+      return sendError(res, 'Document not found', 404);
+    }
+
+    console.log('Document updated successfully');
+    sendSuccess(res, updateData, 'Document updated successfully');
+
+  } catch (error) {
+    console.error('=== UPDATE PATIENT DOCUMENT ERROR ===');
+    console.error('Error:', error);
+    sendError(res, 'Error updating document', 500, error.message);
   }
 };

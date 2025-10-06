@@ -1,9 +1,10 @@
 import Patient, { Visit } from '../modals/Patient.js';
 import User from '../modals/User.js';
 import Lab from '../modals/Lab.js';
+import Appointment from '../modals/Appointment.js';
 import { sendSuccess, sendError } from '../utils/helpers.js';
 
-// @desc    Get all patients assigned to doctor
+// @desc    Get all patients assigned to doctor (via appointments)
 // @route   GET /api/doctor/patients
 // @access  Private (Doctor only)
 export const getAssignedPatients = async (req, res) => {
@@ -22,41 +23,17 @@ export const getAssignedPatients = async (req, res) => {
 
     console.log('Query parameters:', { page, limit, search, status, workflowStatus, dateFilter });
 
-    // Build query for patients assigned to this doctor
-    const query = {
-      'assignment.doctorId': req.user.id
+    // ✅ NEW: Build query for appointments assigned to this doctor
+    const appointmentQuery = {
+      doctorId: req.user.id
     };
 
-    // Add search filter
-    if (search) {
-      query.$or = [
-        { 'personalInfo.fullName': { $regex: search, $options: 'i' } },
-        { patientId: { $regex: search, $options: 'i' } },
-        { 'contactInfo.phone': { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    // Add status filter
+    // Add status filter to appointments
     if (status !== 'all') {
-      query.status = status;
+      appointmentQuery.status = status;
     }
 
-    // Add workflow status filter with correct mapping
-    if (workflowStatus !== 'all') {
-      console.log('Filtering by workflow status:', workflowStatus);
-      
-      if (workflowStatus === 'pending') {
-        query.workflowStatus = { $in: ['Assigned', 'Revisited'] };
-      } else if (workflowStatus === 'inprogress') {
-        query.workflowStatus = { $in: ['Doctor Opened', 'In Progress', 'Reported'] };
-      } else if (workflowStatus === 'completed') {
-        query.workflowStatus = 'Completed';
-      } else {
-        query.workflowStatus = workflowStatus;
-      }
-    }
-
-    // Add date filter
+    // Add date filter to appointments
     if (dateFilter !== 'all') {
       const now = new Date();
       let startDate;
@@ -64,102 +41,170 @@ export const getAssignedPatients = async (req, res) => {
       switch (dateFilter) {
         case 'today':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          appointmentQuery.scheduledDate = { $gte: startDate };
           break;
         case 'yesterday':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
           const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          query.lastActivity = { $gte: startDate, $lt: endDate };
+          appointmentQuery.scheduledDate = { $gte: startDate, $lt: endDate };
           break;
         case 'week':
           startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          appointmentQuery.scheduledDate = { $gte: startDate };
           break;
         case 'month':
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          appointmentQuery.scheduledDate = { $gte: startDate };
           break;
-      }
-
-      if (dateFilter !== 'yesterday') {
-        query.lastActivity = { $gte: startDate };
       }
     }
 
-    console.log('Final query:', JSON.stringify(query, null, 2));
+    console.log('Appointment query:', JSON.stringify(appointmentQuery, null, 2));
 
-    // Execute query with pagination
+    // ✅ Fetch appointments assigned to doctor
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const [patients, total] = await Promise.all([
-      Patient.find(query)
+    const [appointments, totalAppointments] = await Promise.all([
+      Appointment.find(appointmentQuery)
         .populate('assignedBy', 'profile.firstName profile.lastName')
-        .populate('assignment.assignedBy', 'profile.firstName profile.lastName')
-        .sort({ lastActivity: -1 })
+        .populate('createdBy', 'profile.firstName profile.lastName')
+        .populate('documents.uploadedBy', 'profile.firstName profile.lastName')
+        .sort({ scheduledDate: -1 })
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),
-      Patient.countDocuments(query)
+      Appointment.countDocuments(appointmentQuery)
     ]);
 
-    // Populate lab information and visit details
-    const patientsWithVisitsAndLabs = await Promise.all(
-      patients.map(async (patient) => {
-        // Get lab information
-        const lab = await Lab.findOne({ labId: patient.labId }).lean();
-        
-        // Get visit information if available
-        let currentVisit = null;
-        if (patient.currentVisitId) {
-          currentVisit = await Visit.findOne({ visitId: patient.currentVisitId }).lean();
-        }
-        
-        return { 
-          ...patient, 
-          lab: lab,
-          labName: lab?.labName || patient.labId,
-          currentVisit: currentVisit 
-        };
-      })
-    );
+    console.log(`Found ${appointments.length} appointments assigned to doctor`);
 
-    // Get workflow status counts for this doctor's patients
-    const statusCounts = await Patient.aggregate([
-      { $match: { 'assignment.doctorId': req.user.id } },
+    // ✅ Get unique patient IDs from appointments
+    const patientIds = [...new Set(appointments.map(apt => apt.patientId))];
+    console.log(`Unique patients: ${patientIds.length}`);
+
+    // ✅ Fetch patient data for those IDs (with search filter if provided)
+    const patientQuery = { patientId: { $in: patientIds } };
+    
+    if (search) {
+      patientQuery.$or = [
+        { 'personalInfo.fullName': { $regex: search, $options: 'i' } },
+        { patientId: { $regex: search, $options: 'i' } },
+        { 'contactInfo.phone': { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const patients = await Patient.find(patientQuery).lean();
+    console.log(`Fetched ${patients.length} patient records`);
+
+    // ✅ Create patient map for quick lookup
+    const patientMap = {};
+    patients.forEach(patient => {
+      patientMap[patient.patientId] = patient;
+    });
+
+    // ✅ Fetch labs for unique labIds
+    const labIds = [...new Set(appointments.map(apt => apt.labId))];
+    const labs = await Lab.find({ labId: { $in: labIds } }).lean();
+    const labMap = {};
+    labs.forEach(lab => {
+      labMap[lab.labId] = lab;
+    });
+
+    // ✅ Group appointments by patient and enrich with patient + lab data
+    const patientAppointmentMap = {};
+    
+    appointments.forEach(appointment => {
+      const patientId = appointment.patientId;
+      const patient = patientMap[patientId];
+      
+      if (!patient) return; // Skip if patient not found
+      
+      if (!patientAppointmentMap[patientId]) {
+        patientAppointmentMap[patientId] = {
+          ...patient,
+          lab: labMap[appointment.labId] || null,
+          labName: labMap[appointment.labId]?.labName || appointment.labId,
+          // ✅ Store latest appointment as "current appointment"
+          latestAppointment: appointment,
+          // ✅ Store all appointments for this patient
+          doctorAppointments: [],
+          // ✅ Use appointment status as workflow status
+          workflowStatus: appointment.status,
+          lastActivity: appointment.scheduledDate
+        };
+      }
+      
+      patientAppointmentMap[patientId].doctorAppointments.push(appointment);
+    });
+
+    // ✅ Convert map to array
+    const patientsWithAppointments = Object.values(patientAppointmentMap);
+
+    console.log(`Final patients with appointments: ${patientsWithAppointments.length}`);
+
+    // ✅ Apply workflow status filter AFTER grouping (filter on appointment status)
+    let filteredPatients = patientsWithAppointments;
+    
+    if (workflowStatus !== 'all') {
+      console.log('Filtering by appointment status:', workflowStatus);
+      
+      if (workflowStatus === 'pending') {
+        filteredPatients = patientsWithAppointments.filter(p => 
+          ['Scheduled', 'Confirmed'].includes(p.latestAppointment.status)
+        );
+      } else if (workflowStatus === 'inprogress') {
+        filteredPatients = patientsWithAppointments.filter(p => 
+          ['In-Progress'].includes(p.latestAppointment.status)
+        );
+      } else if (workflowStatus === 'completed') {
+        filteredPatients = patientsWithAppointments.filter(p => 
+          ['Completed'].includes(p.latestAppointment.status)
+        );
+      } else {
+        // Specific status filter
+        filteredPatients = patientsWithAppointments.filter(p => 
+          p.latestAppointment.status === workflowStatus
+        );
+      }
+    }
+
+    // ✅ Calculate stats based on ALL appointments assigned to doctor
+    const statusCounts = await Appointment.aggregate([
+      { $match: { doctorId: req.user.id } },
       {
         $group: {
-          _id: '$workflowStatus',
+          _id: '$status',
           count: { $sum: 1 }
         }
       }
     ]);
 
-    console.log('Status counts from DB:', statusCounts);
+    console.log('Appointment status counts:', statusCounts);
 
-    // Format status counts with correct mapping
     const stats = {
-      total,
-      all: total,
+      total: patientIds.length, // Unique patients
+      totalAppointments: totalAppointments,
+      all: patientIds.length,
       pending: 0,
       inprogress: 0,
       completed: 0,
-      assigned: 0,
-      doctorOpened: 0,
-      reported: 0,
-      revisited: 0
+      scheduled: 0,
+      confirmed: 0
     };
 
     statusCounts.forEach(item => {
       const status = item._id;
       const count = item.count;
       
-      // Map individual statuses
       if (status) {
-        const statusKey = status.toLowerCase().replace(/\s+/g, '');
+        const statusKey = status.toLowerCase().replace(/\s+/g, '').replace(/-/g, '');
         stats[statusKey] = count;
       }
       
-      // Group statuses according to mapping
-      if (['Assigned', 'Revisited'].includes(status)) {
+      // Group statuses
+      if (['Scheduled', 'Confirmed'].includes(status)) {
         stats.pending += count;
-      } else if (['Doctor Opened', 'In Progress', 'Reported'].includes(status)) {
+      } else if (['In-Progress'].includes(status)) {
         stats.inprogress += count;
       } else if (['Completed'].includes(status)) {
         stats.completed += count;
@@ -167,15 +212,13 @@ export const getAssignedPatients = async (req, res) => {
     });
 
     console.log('Processed stats:', stats);
-    console.log('Found patients:', patientsWithVisitsAndLabs.length);
-    console.log('Total count:', total);
 
     const response = {
-      data: patientsWithVisitsAndLabs,
+      data: filteredPatients,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalCount: total,
+        totalPages: Math.ceil(filteredPatients.length / parseInt(limit)),
+        totalCount: filteredPatients.length,
         limit: parseInt(limit)
       },
       stats
@@ -191,58 +234,69 @@ export const getAssignedPatients = async (req, res) => {
   }
 };
 
-// @desc    Update patient workflow status by doctor
-// @route   PUT /api/doctor/patients/:patientId/status
+// @desc    Update appointment status by doctor
+// @route   PUT /api/doctor/appointments/:appointmentId/status
 // @access  Private (Doctor only)
-export const updatePatientWorkflowStatus = async (req, res) => {
-  console.log('=== UPDATE PATIENT WORKFLOW STATUS REQUEST START ===');
+export const updateAppointmentStatus = async (req, res) => {
+  console.log('=== UPDATE APPOINTMENT STATUS REQUEST START ===');
   console.log('Doctor ID:', req.user?.id);
-  console.log('Patient ID:', req.params.patientId);
-  console.log('New status:', req.body.workflowStatus);
+  console.log('Appointment ID:', req.params.appointmentId);
+  console.log('New status:', req.body.status);
 
   try {
-    const { workflowStatus, notes } = req.body;
-    const { patientId } = req.params;
+    const { status, notes } = req.body;
+    const { appointmentId } = req.params;
 
-    // Validate workflow status
-    const validStatuses = ['Doctor Opened', 'In Progress', 'Reported', 'Completed'];
-    if (!validStatuses.includes(workflowStatus)) {
-      return sendError(res, 'Invalid workflow status for doctor', 400);
+    // Validate appointment status
+    const validStatuses = ['Confirmed', 'In-Progress', 'Completed', 'Cancelled'];
+    if (!validStatuses.includes(status)) {
+      return sendError(res, 'Invalid appointment status', 400);
     }
 
-    // Check if patient is assigned to this doctor
-    const patient = await Patient.findOne({
-      patientId,
-      'assignment.doctorId': req.user.id
+    // Check if appointment is assigned to this doctor
+    const appointment = await Appointment.findOne({
+      appointmentId,
+      doctorId: req.user.id
     });
 
-    if (!patient) {
-      return sendError(res, 'Patient not found or not assigned to you', 404);
+    if (!appointment) {
+      return sendError(res, 'Appointment not found or not assigned to you', 404);
     }
 
-    // Update patient workflow status
-    const updatedPatient = await Patient.findOneAndUpdate(
-      { patientId },
-      {
-        workflowStatus,
-        lastActivity: new Date(),
-        ...(notes && { 'assignment.notes': notes })
-      },
-      { new: true }
-    ).populate('assignment.assignedBy', 'profile.firstName profile.lastName');
+    // Update appointment status
+    appointment.status = status;
+    appointment.lastModifiedBy = req.user.id;
+    appointment.updatedAt = new Date();
+    
+    if (status === 'Completed') {
+      appointment.completedAt = new Date();
+    }
+    
+    if (notes) {
+      appointment.assignmentNotes = notes;
+    }
 
-    console.log('Patient workflow status updated successfully');
+    await appointment.save();
 
-    sendSuccess(res, updatedPatient, 'Patient status updated successfully');
+    console.log('Appointment status updated successfully');
+
+    // Populate the response
+    const updatedAppointment = await Appointment.findOne({ appointmentId })
+      .populate('doctorId', 'profile doctorDetails')
+      .populate('assignedBy', 'profile')
+      .populate('createdBy', 'profile')
+      .populate('lastModifiedBy', 'profile');
+
+    sendSuccess(res, updatedAppointment, 'Appointment status updated successfully');
 
   } catch (error) {
-    console.error('=== UPDATE PATIENT WORKFLOW STATUS ERROR ===');
+    console.error('=== UPDATE APPOINTMENT STATUS ERROR ===');
     console.error('Error:', error);
-    sendError(res, 'Error updating patient status', 500, error.message);
+    sendError(res, 'Error updating appointment status', 500, error.message);
   }
 };
 
-// @desc    Get patient details for doctor
+// @desc    Get patient details for doctor (via appointments)
 // @route   GET /api/doctor/patients/:patientId
 // @access  Private (Doctor only)
 export const getPatientDetails = async (req, res) => {
@@ -253,42 +307,58 @@ export const getPatientDetails = async (req, res) => {
   try {
     const { patientId } = req.params;
 
-    // Check if patient is assigned to this doctor
-    const patient = await Patient.findOne({
+    // ✅ Check if this doctor has any appointments with this patient
+    const appointments = await Appointment.find({
       patientId,
-      'assignment.doctorId': req.user.id
+      doctorId: req.user.id
     })
     .populate('assignedBy', 'profile.firstName profile.lastName')
-    .populate('assignment.assignedBy', 'profile.firstName profile.lastName')
+    .populate('createdBy', 'profile.firstName profile.lastName')
+    .populate('documents.uploadedBy', 'profile.firstName profile.lastName')
+    .populate({
+      path: 'prescriptions.prescriptionId',
+      model: 'Prescription',
+      populate: [
+        { path: 'doctorId', select: 'profile' },
+        { path: 'medicines.medicineId', select: 'name companyName' }
+      ]
+    })
+    .sort({ scheduledDate: -1 })
     .lean();
 
+    if (!appointments || appointments.length === 0) {
+      return sendError(res, 'Patient not found or you have no appointments with this patient', 404);
+    }
+
+    // ✅ Fetch patient data
+    const patient = await Patient.findOne({ patientId }).lean();
+
     if (!patient) {
-      return sendError(res, 'Patient not found or not assigned to you', 404);
+      return sendError(res, 'Patient record not found', 404);
     }
 
     // Get lab information
     const lab = await Lab.findOne({ labId: patient.labId }).lean();
 
-    // Get current visit details
-    let currentVisit = null;
-    if (patient.currentVisitId) {
-      currentVisit = await Visit.findOne({ visitId: patient.currentVisitId }).lean();
-    }
-
-    // Get all visits for this patient
-    const visits = await Visit.find({ patientId })
-      .sort({ 'appointment.date': -1 })
-      .lean();
-
+    // ✅ Prepare response with patient data + appointments
     const patientWithDetails = {
       ...patient,
       lab: lab,
       labName: lab?.labName || patient.labId,
-      currentVisit: currentVisit,
-      visits: visits
+      // ✅ Include all appointments with this doctor
+      doctorAppointments: appointments,
+      latestAppointment: appointments[0], // Most recent
+      // ✅ Stats based on doctor's appointments only
+      appointmentStats: {
+        total: appointments.length,
+        completed: appointments.filter(a => a.status === 'Completed').length,
+        scheduled: appointments.filter(a => a.status === 'Scheduled').length,
+        inProgress: appointments.filter(a => a.status === 'In-Progress').length
+      }
     };
 
     console.log('Patient details retrieved successfully');
+    console.log(`Found ${appointments.length} appointments with this patient`);
 
     sendSuccess(res, patientWithDetails, 'Patient details retrieved successfully');
 
@@ -314,51 +384,58 @@ export const getDoctorStats = async (req, res) => {
 
     const doctorId = req.user.id;
 
+    // ✅ Get stats based on appointments, not patient assignments
     const [
-      totalAssigned,
-      todayPatients,
-      weekPatients,
-      monthPatients,
-      workflowStats,
-      recentActivity
+      totalAppointments,
+      todayAppointments,
+      weekAppointments,
+      monthAppointments,
+      statusStats,
+      recentAppointments
     ] = await Promise.all([
-      Patient.countDocuments({ 'assignment.doctorId': doctorId }),
-      Patient.countDocuments({ 
-        'assignment.doctorId': doctorId, 
-        lastActivity: { $gte: startOfDay } 
+      Appointment.countDocuments({ doctorId }),
+      Appointment.countDocuments({ 
+        doctorId, 
+        scheduledDate: { $gte: startOfDay } 
       }),
-      Patient.countDocuments({ 
-        'assignment.doctorId': doctorId, 
-        lastActivity: { $gte: startOfWeek } 
+      Appointment.countDocuments({ 
+        doctorId, 
+        scheduledDate: { $gte: startOfWeek } 
       }),
-      Patient.countDocuments({ 
-        'assignment.doctorId': doctorId, 
-        lastActivity: { $gte: startOfMonth } 
+      Appointment.countDocuments({ 
+        doctorId, 
+        scheduledDate: { $gte: startOfMonth } 
       }),
-      Patient.aggregate([
-        { $match: { 'assignment.doctorId': doctorId } },
-        { $group: { _id: '$workflowStatus', count: { $sum: 1 } } }
+      Appointment.aggregate([
+        { $match: { doctorId } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
-      Patient.find({ 'assignment.doctorId': doctorId })
-        .select('patientId personalInfo.fullName workflowStatus lastActivity')
-        .sort({ lastActivity: -1 })
+      Appointment.find({ doctorId })
+        .select('appointmentId patientId status scheduledDate chiefComplaints')
+        .sort({ scheduledDate: -1 })
         .limit(10)
         .lean()
     ]);
 
+    // Get unique patient count
+    const uniquePatients = await Appointment.distinct('patientId', { doctorId });
+
     const stats = {
-      patients: {
-        total: totalAssigned,
-        today: todayPatients,
-        week: weekPatients,
-        month: monthPatients
+      appointments: {
+        total: totalAppointments,
+        today: todayAppointments,
+        week: weekAppointments,
+        month: monthAppointments
       },
-      workflow: workflowStats.reduce((acc, item) => {
-        const key = item._id.toLowerCase().replace(/\s+/g, '');
+      patients: {
+        total: uniquePatients.length
+      },
+      status: statusStats.reduce((acc, item) => {
+        const key = item._id.toLowerCase().replace(/\s+/g, '').replace(/-/g, '');
         acc[key] = item.count;
         return acc;
       }, {}),
-      recentActivity
+      recentActivity: recentAppointments
     };
 
     console.log('Doctor statistics generated:', stats);
