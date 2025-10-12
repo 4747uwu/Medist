@@ -234,7 +234,7 @@ const AssignerDashboard = () => {
 
   const handleDoctorCreated = (newDoctor) => {
     console.log('✅ AssignerDashboard - Doctor created successfully:', newDoctor);
-    alert(`Doctor ${newDoctor.profile.firstName} ${newDoctor.profile.lastName} created successfully!`);
+    alert(`Doctor ${newDoctor.doctor.profile.firstName} ${newDoctor.doctor.profile.lastName} created successfully!`);
     fetchPatients(); // Refresh data
   };
 

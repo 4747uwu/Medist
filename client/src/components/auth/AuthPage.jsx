@@ -44,6 +44,8 @@ const AuthPage = () => {
         return '/doctor-dashboard';
       case 'assigner':
         return '/assigner-dashboard';
+      case 'jrdoctor': // ✅ NEW: Jr Doctor route
+        return '/jrdoctor-dashboard';
       default:
         return '/auth';
     }

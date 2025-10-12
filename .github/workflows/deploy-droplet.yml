@@ -60,7 +60,7 @@ jobs:
           # ✅ Create production environment file using Atlas MongoDB
           cat > .env << 'EOF'
           NODE_ENV=production
-          MONGODB_URI=mongodb+srv://pawrangerskyler_db_user:y7zV2rO5KRfPO5Hs@cluster0.ku1pxkx.mongodb.net/Anish?retryWrites=true&w=majority&appName=Cluster0
+          MONGODB_URI=mongodb://alice:alicePassword@mongo1:27017/admin?replicaSet=rs0&authSource=admin
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           JWT_EXPIRE=30d
           FRONTEND_URL=http://${{ secrets.DROPLET_HOST }}

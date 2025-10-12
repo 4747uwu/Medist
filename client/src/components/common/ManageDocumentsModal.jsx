@@ -11,7 +11,7 @@ const ManageDocumentsModal = ({ isOpen, onClose, appointment, patient, onSuccess
   const [error, setError] = useState('');
 
   // Check if user can upload documents (assigners, clinics, and doctors)
-  const canUpload = ['assigner', 'clinic', 'doctor'].includes(user?.role);
+  const canUpload = ['assigner', 'clinic', 'jrdoctor'].includes(user?.role);
 
   const documentTypes = [
     'Lab Report',

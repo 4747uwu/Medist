@@ -40,10 +40,10 @@ export const register = async (req, res) => {
     }
 
     // Validate role
-    const validRoles = ['clinic', 'doctor', 'assigner'];
+    const validRoles = ['clinic', 'doctor', 'assigner', 'jrdoctor'];
     if (!validRoles.includes(role)) {
       console.log('Invalid role:', role);
-      return sendError(res, 'Invalid role. Must be clinic, doctor, or assigner', 400);
+      return sendError(res, 'Invalid role. Must be clinic, doctor, assigner, or jrdoctor', 400);
     }
 
     // Validate password strength
@@ -70,7 +70,7 @@ export const register = async (req, res) => {
       }
     }
 
-    if (role === 'doctor') {
+    if (role === 'doctor' || role === 'jrdoctor') { // ✅ Handle both doctor types
       const doctorRequired = ['specialization', 'qualification'];
       const missingDoctor = doctorRequired.filter(field => !doctorDetails?.[field]);
       if (missingDoctor.length > 0) {
@@ -121,18 +121,26 @@ export const register = async (req, res) => {
       };
 
       console.log('Clinic details added:', userData.clinicDetails);
-    } else if (role === 'doctor' && doctorDetails) {
-      console.log('Processing doctor registration...');
+    } else if ((role === 'doctor' || role === 'jrdoctor') && doctorDetails) {
+      console.log(`Processing ${role} registration...`);
       
       userData.doctorDetails = {
         ...doctorDetails,
         experience: parseInt(doctorDetails.experience) || 0,
         consultationFee: parseFloat(doctorDetails.consultationFee) || 0,
         registrationDate: new Date(),
-        isVerified: false // Doctors need verification
+        isVerified: role === 'jrdoctor' ? true : false // ✅ Auto-verify jr doctors
       };
 
-      console.log('Doctor details added:', userData.doctorDetails);
+      // ✅ If jrdoctor, add clinic details if provided
+      if (role === 'jrdoctor' && clinicDetails) {
+        userData.clinicDetails = {
+          ...clinicDetails,
+          registrationDate: new Date()
+        };
+      }
+
+      console.log(`${role} details added:`, userData.doctorDetails);
     } else if (role === 'assigner' && assignerDetails) {
       console.log('Processing assigner registration...');
       

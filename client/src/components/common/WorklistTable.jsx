@@ -456,7 +456,7 @@ const WorklistTable = ({
                     {columnConfig.description && (
                       <td className="border border-gray-300 px-2 py-2 text-xs">
                         <div className="text-gray-900 line-clamp-2">
-                          {patient.currentVisit?.complaints?.chief || patient.description || 'No description'}
+                          {patient.currentVisit?.complaints?.chief || patient?.latestAppointment?.description || 'No description'}
                         </div>
                       </td>
                     )}
@@ -482,11 +482,11 @@ const WorklistTable = ({
                     {columnConfig.lastAppointment && (
                       <td className="border border-gray-300 px-2 py-2 text-xs">
                         <div className="text-gray-900">
-                          {formatDate(patient.lastAppointment?.date)}
+                          {formatDate(patient.latestAppointment?.date || patient.lastAppointment.date)}
                         </div>
-                        {patient.lastAppointment?.doctor && patient.lastAppointment.doctor !== 'N/A' && (
+                        {patient.latestAppointment?.doctor  && (
                           <div className="text-xs text-gray-500 truncate">
-                            {patient.lastAppointment.doctor}
+                            {patient?.latestAppointment?.doctor}
                           </div>
                         )}
                       </td>

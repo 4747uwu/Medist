@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import AppointmentAssignmentModal from './AppointmentAssignmentModal';
 import SeePrescriptionModal from './SeePrescriptionModal';
 import ManageDocumentsModal from './ManageDocumentsModal'; // ✅ Import ManageDocumentsModal
+import VitalsModal from './VitalsModal'; // ✅ NEW: import VitalsModal
 
 const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
   const { user } = useAuth();
@@ -26,7 +27,12 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
   const [showDocumentsModal, setShowDocumentsModal] = useState(false);
   const [selectedAppointmentForDocuments, setSelectedAppointmentForDocuments] = useState(null);
 
-  const isAssigner = user?.role === 'assigner';
+  // ✅ NEW: Vitals modal state
+  const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [selectedAppointmentForVitals, setSelectedAppointmentForVitals] = useState(null);
+
+  const isAssigner = user?.role === 'assigner' || user?.role === 'jrdoctor';
+  const canRecordVitals = ['doctor', 'jrdoctor', 'clinic'].includes(user?.role);
 
   useEffect(() => {
     if (isOpen && patient) {
@@ -79,6 +85,25 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
     console.log('Opening documents modal for appointment:', appointment.appointmentId);
     setSelectedAppointmentForDocuments(appointment);
     setShowDocumentsModal(true);
+  };
+
+  // ✅ NEW: Handle vitals modal
+  const handleRecordVitals = (appointment) => {
+    console.log('Opening vitals modal for appointment:', appointment.appointmentId);
+    setSelectedAppointmentForVitals(appointment);
+    setShowVitalsModal(true);
+  };
+
+  // ✅ ADD: Missing handleVitalsSuccess function
+  const handleVitalsSuccess = async (updatedAppointment) => {
+    console.log('Vitals updated successfully:', updatedAppointment);
+    setShowVitalsModal(false);
+    setSelectedAppointmentForVitals(null);
+    await fetchAppointments(); // Refresh appointments to show updated vitals
+    onSuccess && onSuccess({
+      appointment: updatedAppointment,
+      patient: patient
+    });
   };
 
   const handleStatusUpdate = async (appointment, newStatus) => {
@@ -348,6 +373,23 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
                           </button>
                         )}
 
+                        {/* ✅ NEW: Vitals Button - visible to doctors/jrdoctors/clinics */}
+                        {canRecordVitals && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRecordVitals(appointment);
+                            }}
+                            className="px-3 py-2 text-xs bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-all duration-200 flex items-center space-x-2 border border-rose-200"
+                            title="Record / update vitals"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            </svg>
+                            <span>Vitals</span>
+                          </button>
+                        )}
+
                         {/* ✅ FIXED: Show Prescription Button for both doctors and assigners */}
                         <button
                           onClick={(e) => {
@@ -512,6 +554,20 @@ const AppointmentListModal = ({ isOpen, onClose, patient, onSuccess }) => {
           onSuccess={() => {
             fetchAppointments(); // Refresh appointments when documents change
           }}
+        />
+      )}
+
+      {/* ✅ NEW: Vitals Modal */}
+      {showVitalsModal && selectedAppointmentForVitals && (
+        <VitalsModal
+          isOpen={showVitalsModal}
+          onClose={() => {
+            setShowVitalsModal(false);
+            setSelectedAppointmentForVitals(null);
+          }}
+          appointment={selectedAppointmentForVitals}
+          patient={patient}
+          onSuccess={handleVitalsSuccess}
         />
       )}
     </>

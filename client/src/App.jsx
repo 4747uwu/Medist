@@ -9,9 +9,11 @@ import DoctorDashboard from './pages/Doctor/Dashboard';
 import AssignerDashboard from './pages/assigner/Dashboard';
 import PrescriptionPage from './pages/Doctor/PrescriptionPage.jsx';
 import PrescriptionHistoryPage from './pages/Doctor/PrescriptionHistoryPage.jsx';
+import ShowAppointmentDetails from './pages/Doctor/Appointment/showAppointmentDetails';
+import JrDoctorDashboard from './pages/jrDoctor/Dashboard';
 
 // Protected Route Component (moved here)
-const ProtectedRoute = ({ children, requiredRole = null }) => {
+const ProtectedRoute = ({ children, requiredRole = null, allowedRoles = null }) => {
   const { isAuthenticated, user, loading } = useAuth();
   const location = useLocation();
 
@@ -20,6 +22,7 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
     user: user?.role, 
     loading, 
     requiredRole,
+    allowedRoles,
     currentPath: location.pathname 
   });
 
@@ -47,6 +50,15 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
     console.log('ProtectedRoute - Insufficient permissions:', { 
       userRole: user?.role, 
       requiredRole 
+    });
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  // Check if the user's role is in the list of allowed roles
+  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+    console.log('ProtectedRoute - Access denied for this role:', { 
+      userRole: user?.role, 
+      allowedRoles 
     });
     return <Navigate to="/unauthorized" replace />;
   }
@@ -112,10 +124,22 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* ✅ NEW: Jr Doctor Dashboard Route */}
+            <Route 
+              path="/jrdoctor-dashboard" 
+              element={
+                <ProtectedRoute requiredRole="jrdoctor">
+                  <JrDoctorDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* Doctor-specific routes - Allow both doctor and jrdoctor */}
             <Route 
               path="/prescription/:patientId" 
               element={
-                <ProtectedRoute requiredRole="doctor">
+                <ProtectedRoute allowedRoles={['doctor', 'jrdoctor']}>
                   <PrescriptionPage />
                 </ProtectedRoute>
               } 
@@ -123,10 +147,28 @@ function App() {
             <Route 
               path="/prescription-history/:patientId" 
               element={
-                <ProtectedRoute requiredRole="doctor">
+                <ProtectedRoute allowedRoles={['doctor', 'jrdoctor']}>
                   <PrescriptionHistoryPage />
                 </ProtectedRoute>
               } 
+            />
+            <Route 
+              path="/appointment-details/:appointmentId" 
+              element={
+                <ProtectedRoute allowedRoles={['doctor', 'jrdoctor']}>
+                  <ShowAppointmentDetails />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* ✅ LEGACY: Keep old jrdoctor route for backward compatibility */}
+            <Route
+              path="/jrdoctor/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={['jrdoctor']}>
+                  <JrDoctorDashboard />
+                </ProtectedRoute>
+              }
             />
             
             {/* Unauthorized route */}

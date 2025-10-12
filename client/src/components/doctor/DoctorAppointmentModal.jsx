@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import SeePrescriptionModal from '../common/SeePrescriptionModal';
 import ManageDocumentsModal from '../common/ManageDocumentsModal';
+import AppointmentDetailsModal from './AppointmentDetailsModal';
 
 const DoctorAppointmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
   const { user } = useAuth();
@@ -23,6 +24,9 @@ const DoctorAppointmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
 
   const [showDocumentsModal, setShowDocumentsModal] = useState(false);
   const [selectedAppointmentForDocuments, setSelectedAppointmentForDocuments] = useState(null);
+
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedAppointmentForDetails, setSelectedAppointmentForDetails] = useState(null);
 
   const isDoctor = user?.role === 'doctor';
 
@@ -103,6 +107,11 @@ const DoctorAppointmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
     console.log('Opening documents modal for appointment:', appointment.appointmentId);
     setSelectedAppointmentForDocuments(appointment);
     setShowDocumentsModal(true);
+  };
+
+  const handleViewDetails = (appointment) => {
+    setSelectedAppointmentForDetails(appointment.appointmentId);
+    setShowDetailsModal(true);
   };
 
   const formatDateTime = (date, time) => {
@@ -323,18 +332,33 @@ const DoctorAppointmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
                       )}
                     </div>
 
-                    {/* Action Button */}
-                    {isDoctor && (
+                    {/* ✅ FIXED: Action Buttons for Latest Assigned Appointment */}
+                    <div className="flex flex-wrap gap-2">
+                      {/* View Details Button - NEW */}
                       <button
-                        onClick={() => handleCreatePrescription(latestAssigned)}
-                        className="w-full px-3 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all text-xs font-semibold flex items-center justify-center space-x-1"
+                        onClick={() => handleViewDetails(latestAssigned)}
+                        className="flex-1 min-w-[140px] px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-xs font-semibold flex items-center justify-center space-x-1.5"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
-                        <span>Create Prescription</span>
+                        <span>View Details</span>
                       </button>
-                    )}
+
+                      {/* Create Prescription Button */}
+                      {isDoctor && (
+                        <button
+                          onClick={() => handleCreatePrescription(latestAssigned)}
+                          className="flex-1 min-w-[140px] px-3 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all text-xs font-semibold flex items-center justify-center space-x-1.5"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          <span>Create Prescription</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -397,6 +421,18 @@ const DoctorAppointmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
 
                         {/* ✅ ACTION BUTTONS - Same as latest appointment */}
                         <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+                          {/* View Details Button - NEW */}
+                          <button
+                            onClick={() => handleViewDetails(appointment)}
+                            className="flex-1 min-w-[120px] px-2 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-all text-xs font-semibold flex items-center justify-center space-x-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>View Details</span>
+                          </button>
+
                           {isDoctor && (
                             <button
                               onClick={() => handleCreatePrescription(appointment)}
@@ -656,6 +692,18 @@ const DoctorAppointmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
           onSuccess={() => {
             fetchAssignedAppointments();
           }}
+        />
+      )}
+
+      {/* Appointment Details Modal */}
+      {showDetailsModal && selectedAppointmentForDetails && (
+        <AppointmentDetailsModal
+          isOpen={showDetailsModal}
+          onClose={() => {
+            setShowDetailsModal(false);
+            setSelectedAppointmentForDetails(null);
+          }}
+          appointmentId={selectedAppointmentForDetails}
         />
       )}
     </>

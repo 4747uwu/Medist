@@ -3,8 +3,7 @@ import { apiClient } from '../../services/api';
 import PhoneEntry from './CreatePatientModal/PhoneEntry';
 import PersonalInfo from './CreatePatientModal/PersonalInfo';
 import MedicalHistory from './CreatePatientModal/MedicalHistory';
-import Documents from './CreatePatientModal/Documents';
-import VisitDetails from './CreatePatientModal/VisitDetails';
+import BasicAppointmentDetails from './CreatePatientModal/BasicAppointmentDetails';
 import ModalLayout from './CreatePatientModal/ModalLayout';
 import { usePatientForm } from './CreatePatientModal/usePatientForm';
 
@@ -54,6 +53,7 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     convertFileToBase64
   } = usePatientForm();
 
+  // ✅ NEW: Simplified slides for clinic workflow
   const slides = [
     {
       title: "Patient Registration",
@@ -63,7 +63,7 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     },
     {
       title: "Patient Details",
-      description: "Enter patient details for comprehensive care",
+      description: "Enter basic patient information",
       image: "👤",
       color: "from-green-500 to-green-600"
     },
@@ -74,14 +74,8 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
       color: "from-purple-500 to-purple-600"
     },
     {
-      title: "Upload Documents",
-      description: "Upload patient documents and ID proofs",
-      image: "📄",
-      color: "from-orange-500 to-orange-600"
-    },
-    {
       title: "Schedule Appointment",
-      description: "Book appointment with medical assessment",
+      description: "Book appointment slot",
       image: "📅",
       color: "from-indigo-500 to-indigo-600"
     }
@@ -137,11 +131,12 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
           emergencyContact: patient.emergencyContact,
           medicalHistory: patient.medicalHistory,
           photo: patient.photo,
-          documents: [] // ✅ FIXED: Start with empty documents for new appointment
+          documents: [] // keep documents but we will skip documents step for existing patients
         });
         
         setPatientExists(true);
-        setStep('documents'); // Allow user to add documents for this appointment
+        // Directly go to appointment details for existing patients
+        setStep('appointment');
       } else {
         // New patient - collect all details
         console.log('New patient, collecting details');
@@ -163,11 +158,12 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
+  // ✅ SIMPLIFIED: Remove documents step, only basic appointment info
   const handleNext = () => {
     if (step === 'permanent' && !validatePersonalInfo()) return;
     
-    // Updated step order to include documents
-    const stepOrder = ['phone', 'permanent', 'medical', 'documents', 'visit'];
+    // ✅ UPDATED: Simplified step order - no documents, no detailed vitals
+    const stepOrder = ['phone', 'permanent', 'medical', 'appointment'];
     const currentIndex = stepOrder.indexOf(step);
     if (currentIndex < stepOrder.length - 1) {
       setStep(stepOrder[currentIndex + 1]);
@@ -175,21 +171,35 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleBack = () => {
-    // Updated step order to include documents
-    const stepOrder = ['phone', 'permanent', 'medical', 'documents', 'visit'];
+    // ✅ UPDATED: Simplified step order
+    const stepOrder = ['phone', 'permanent', 'medical', 'appointment'];
     const currentIndex = stepOrder.indexOf(step);
     if (currentIndex > 0) {
       setStep(stepOrder[currentIndex - 1]);
     }
   };
 
+  // ✅ SIMPLIFIED: Basic appointment validation only
+  const validateAppointmentBasics = () => {
+    const newErrors = {};
+
+    if (!formData.appointment?.date) {
+      newErrors.appointmentDate = 'Appointment date is required';
+    }
+
+    if (!formData.appointment?.time) {
+      newErrors.appointmentTime = 'Appointment time is required';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async () => {
-    console.log('Submitting patient and appointment data...');
-    console.log('Form data being submitted:', formData);
-    console.log('Documents to be submitted:', formData.documents);
+    console.log('Submitting basic patient and appointment data...');
     
-    if (!validateAppointmentDetails()) {
-      console.log('Validation failed:', errors);
+    if (!validateAppointmentBasics()) {
+      console.log('Basic appointment validation failed:', errors);
       return;
     }
 
@@ -198,8 +208,7 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     try {
       let patientResponse;
 
-      // ✅ FIXED: Only create/update patient if it's a NEW patient
-      // For existing patients, we'll attach documents to the appointment directly
+      // ✅ Create/update patient with basic info only
       if (!patientExists) {
         const patientPayload = {
           patientId: phoneNumber,
@@ -208,90 +217,43 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
           emergencyContact: formData.emergencyContact,
           medicalHistory: formData.medicalHistory,
           photo: formData.photo
-          // ✅ REMOVED: No documents in patient payload
         };
 
-        console.log('Creating new patient:', patientPayload);
+        console.log('Creating new patient with basic info:', patientPayload);
         patientResponse = await apiClient.post('/patients', patientPayload);
-        console.log('Patient response:', patientResponse.data);
-      } else {
-        console.log('Patient exists, skipping patient creation');
       }
 
-      // ✅ FIXED: Create appointment with documents attached
+      // ✅ Create appointment with minimal required data
       const appointmentPayload = {
         scheduledDate: formData.appointment.date,
         scheduledTime: formData.appointment.time,
-        mode: formData.appointment.mode,
-        appointmentType: formData.appointment.type || 'Consultation',
-        duration: formData.appointment.duration || 30,
-        doctorId: formData.appointment.doctorId || null,
+        mode: formData.appointment.mode || 'In-person',
+        appointmentType: 'Consultation',
+        duration: 30,
+        doctorId: null, // No doctor assigned initially
         
-        // ✅ NEW: Include documents in appointment payload
-        documents: formData.documents || [],
-        
+        // ✅ MINIMAL: Only basic complaint if provided
         chiefComplaints: {
           primary: formData.appointment.complaints?.chief || '',
           duration: formData.appointment.complaints?.duration || '',
-          severity: formData.appointment.complaints?.severity || 'Moderate'
+          severity: 'Moderate'
         },
         
-        vitals: {
-          weight: {
-            value: formData.appointment.vitals?.weight?.value ? parseFloat(formData.appointment.vitals.weight.value) : null,
-            unit: 'kg'
-          },
-          temperature: {
-            value: formData.appointment.vitals?.temperature?.value ? parseFloat(formData.appointment.vitals.temperature.value) : null,
-            unit: '°F'
-          },
-          bloodPressure: {
-            systolic: formData.appointment.vitals?.bloodPressure?.systolic ? parseInt(formData.appointment.vitals.bloodPressure.systolic) : null,
-            diastolic: formData.appointment.vitals?.bloodPressure?.diastolic ? parseInt(formData.appointment.vitals.bloodPressure.diastolic) : null
-          },
-          heartRate: {
-            value: formData.appointment.vitals?.heartRate?.value ? parseInt(formData.appointment.vitals.heartRate.value) : null,
-            unit: 'bpm'
-          },
-          oxygenSaturation: {
-            value: formData.appointment.vitals?.oxygenSaturation?.value ? parseInt(formData.appointment.vitals.oxygenSaturation.value) : null,
-            unit: '%'
-          },
-          bloodSugar: {
-            value: formData.appointment.vitals?.bloodSugar?.value ? parseFloat(formData.appointment.vitals.bloodSugar.value) : null,
-            type: formData.appointment.vitals?.bloodSugar?.type || 'Random',
-            unit: 'mg/dL'
-          }
-        },
-        
-        examination: {
-          physicalFindings: formData.appointment.examination?.physicalFindings || '',
-          provisionalDiagnosis: formData.appointment.examination?.provisionalDiagnosis || '',
-          differentialDiagnosis: formData.appointment.examination?.differentialDiagnosis || []
-        },
-        
-        followUp: {
-          nextAppointmentDate: formData.appointment.followUp?.nextAppointmentDate || null,
-          instructions: formData.appointment.followUp?.instructions || '',
-          notes: formData.appointment.followUp?.notes || ''
-        },
-        
-        doctorNotes: formData.appointment.doctorNotes || ''
+        // ✅ EMPTY: No vitals, examination, or treatment initially
+        vitals: {},
+        examination: {},
+        followUp: {},
+        doctorNotes: ''
       };
 
-      console.log('Creating appointment with documents:', appointmentPayload);
-      console.log('Number of documents attached:', appointmentPayload.documents.length);
+      console.log('Creating basic appointment:', appointmentPayload);
       
       const appointmentResponse = await apiClient.post(
         `/patients/${phoneNumber}/appointments`,
         appointmentPayload
       );
 
-      console.log('Appointment response:', appointmentResponse.data);
-      console.log('Documents in created appointment:', appointmentResponse.data.data?.documents?.length || 0);
-
       if (appointmentResponse.data.success) {
-        // 🔥 RESET THE FORM STATE AFTER SUCCESS
         resetForm();
         
         onSuccess && onSuccess({
@@ -303,14 +265,13 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
 
     } catch (error) {
       console.error('Error:', error);
-      console.error('Error details:', error.response?.data);
       setErrors({ submit: error.response?.data?.message || 'Failed to create patient/appointment' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // 🔥 ADD: Reset function
+  // ✅ UPDATED: Reset form to basic fields only
   const resetForm = () => {
     setStep('phone');
     setPhoneNumber('');
@@ -321,10 +282,8 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     setNewCondition('');
     setNewAllergy('');
     setNewSurgery({ surgery: '', date: '' });
-    setNewTest({ testName: '', urgency: 'Routine' });
-    setNewMedicine({ medicineName: '', dosage: '', duration: '' });
     
-    // Reset form data to initial state
+    // ✅ SIMPLIFIED: Basic form data only
     setFormData({
       personalInfo: {
         fullName: '',
@@ -342,30 +301,11 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
       emergencyContact: { name: '', relationship: '', phone: '' },
       medicalHistory: { chronicConditions: [], allergies: [], pastSurgeries: [], familyHistory: [] },
       photo: null,
-      documents: [],
       appointment: {
         date: new Date().toISOString().split('T')[0],
         time: new Date().toTimeString().slice(0, 5),
         mode: 'In-person',
-        type: 'Consultation',
-        duration: 30,
-        doctorId: '',
-        doctorName: '',
-        specialization: '',
-        vitals: {
-          weight: { value: '', unit: 'kg' },
-          temperature: { value: '', unit: '°F' },
-          bloodPressure: { systolic: '', diastolic: '' },
-          heartRate: { value: '', unit: 'bpm' },
-          oxygenSaturation: { value: '', unit: '%' },
-          bloodSugar: { value: '', type: 'Random', unit: 'mg/dL' }
-        },
-        complaints: { chief: '', duration: '', severity: 'Moderate', pastHistoryRelevant: '' },
-        examination: { physicalFindings: '', provisionalDiagnosis: '', differentialDiagnosis: [] },
-        investigations: { testsRecommended: [], pastReportsReviewed: [] },
-        treatment: { medicines: [], lifestyleAdvice: '', dietSuggestions: '' },
-        followUp: { nextAppointmentDate: '', instructions: '', notes: '' },
-        doctorNotes: ''
+        complaints: { chief: '', duration: '' }
       }
     });
   };
@@ -392,6 +332,7 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
     step === 'documents' ? 'orange' : 'indigo'
   )) || slides[0];
 
+  // ✅ UPDATED: Simplified step content rendering
   const renderStepContent = () => {
     switch (step) {
       case 'phone':
@@ -438,33 +379,13 @@ const CreatePatientModal = ({ isOpen, onClose, onSuccess }) => {
           />
         );
 
-      case 'documents':
+      case 'appointment':
         return (
-          <Documents
-            formData={formData}
-            addDocument={addDocument}
-            removeDocument={removeDocument}
-            updateDocument={updateDocument}
-            convertFileToBase64={convertFileToBase64}
-            errors={errors}
-          />
-        );
-
-      case 'visit':
-        return (
-          <VisitDetails
+          <BasicAppointmentDetails
             formData={formData}
             patientExists={patientExists}
             handleInputChange={handleInputChange}
             appointmentModes={appointmentModes}
-            newTest={newTest}
-            setNewTest={setNewTest}
-            addTest={addTest}
-            removeTest={removeTest}
-            newMedicine={newMedicine}
-            setNewMedicine={setNewMedicine}
-            addMedicine={addMedicine}
-            removeMedicine={removeMedicine}
             errors={errors}
           />
         );

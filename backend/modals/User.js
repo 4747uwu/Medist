@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['clinic', 'doctor', 'assigner'],
+    enum: ['clinic', 'doctor', 'assigner', 'jrdoctor'],
     required: [true, 'Role is required']
   },
   profile: {
@@ -57,10 +57,17 @@ const userSchema = new mongoose.Schema({
       end: String
     },
     signature: {
-      image: String, // Base64 encoded image or file path
+      image: String,
       type: { type: String, enum: ['upload', 'draw'], default: 'upload' },
       createdAt: Date
-    }
+    },
+    termsAcceptance: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TermsAcceptance',
+      required: false
+    },
+    termsAcceptedAt: Date,
+    termsVersion: String
   },
   
   // Assigner-specific details

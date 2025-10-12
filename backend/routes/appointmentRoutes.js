@@ -9,7 +9,9 @@ import {
   getAppointmentDocuments,
   addAppointmentDocument,
   updateAppointmentDocument,
-  deleteAppointmentDocument
+  deleteAppointmentDocument,
+  updateAppointmentVitals,
+  updateAppointmentAssessment // ✅ ADD: New comprehensive assessment endpoint
 } from '../controllers/appointment.controller.js';
 
 const router = express.Router();
@@ -25,5 +27,11 @@ router.get('/:appointmentId/documents', protect, getAppointmentDocuments);
 router.post('/:appointmentId/documents', protect, addAppointmentDocument);
 router.put('/:appointmentId/documents/:documentId', protect, updateAppointmentDocument);
 router.delete('/:appointmentId/documents/:documentId', protect, deleteAppointmentDocument);
+
+// ✅ NEW: Comprehensive medical assessment route
+router.put('/:appointmentId/assessment', protect, updateAppointmentAssessment);
+
+// ✅ KEEP: Legacy vitals-only route for backward compatibility
+router.put('/:appointmentId/vitals', protect, updateAppointmentVitals);
 
 export default router;

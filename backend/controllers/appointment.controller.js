@@ -338,7 +338,7 @@ export const addAppointmentDocument = async (req, res) => {
     const documentData = req.body;
 
     // Check permissions - assigners, clinics, and doctors can upload
-    if (!['assigner', 'clinic', 'doctor'].includes(req.user.role)) {
+    if (!['assigner', 'clinic', 'jrdoctor'].includes(req.user.role)) {
       console.log('Permission denied for role:', req.user.role);
       return sendError(res, 'You do not have permission to upload documents', 403);
     }
@@ -503,3 +503,236 @@ export const deleteAppointmentDocument = async (req, res) => {
     sendError(res, 'Error deleting document', 500, error.message);
   }
 };
+
+
+
+// @desc    Update comprehensive medical assessment for an appointment
+// @route   PUT /api/appointments/:appointmentId/assessment
+// @access  Private (doctor, jrdoctor, clinic)
+export const updateAppointmentAssessment = async (req, res) => {
+  console.log('=== UPDATE APPOINTMENT ASSESSMENT REQUEST START ===');
+  console.log('User ID:', req.user?.id);
+  console.log('User Role:', req.user?.role);
+  console.log('Appointment ID:', req.params.appointmentId);
+  console.log('Request body keys:', Object.keys(req.body));
+  
+  try {
+    const { appointmentId } = req.params;
+    const user = req.user;
+
+    // Authorization check
+    if (!user || !['doctor', 'jrdoctor', 'clinic'].includes(user.role)) {
+      return sendError(res, 'Unauthorized - Only doctors and clinics can update medical assessments', 403);
+    }
+
+    // Find appointment
+    const appointment = await Appointment.findOne({ appointmentId });
+    if (!appointment) {
+      return sendError(res, 'Appointment not found', 404);
+    }
+
+    // ✅ Lab-based authorization - ensure user belongs to same lab
+    const userLabId = user.clinicDetails?.labId;
+    if (userLabId && appointment.labId !== userLabId) {
+      return sendError(res, 'Not authorized to update this appointment', 403);
+    }
+
+    const { 
+      vitals, 
+      chiefComplaints, 
+      examination, 
+      investigations, 
+      treatment, 
+      followUp, 
+      doctorNotes 
+    } = req.body;
+
+    console.log('Updating appointment with assessment data...');
+
+    // ✅ Update vitals if provided
+    if (vitals && Object.keys(vitals).length > 0) {
+      appointment.vitals = {
+        ...appointment.vitals, // Keep existing vitals
+        ...vitals, // Override with new vitals
+        recordedAt: new Date(),
+        recordedBy: user.id
+      };
+      console.log('Vitals updated');
+    }
+
+    // ✅ Update chief complaints if provided
+    if (chiefComplaints && Object.keys(chiefComplaints).length > 0) {
+      appointment.chiefComplaints = {
+        ...appointment.chiefComplaints, // Keep existing complaints
+        ...chiefComplaints, // Override with new complaints
+        recordedAt: new Date(),
+        recordedBy: user.id
+      };
+      console.log('Chief complaints updated');
+    }
+
+    // ✅ Update examination if provided
+    if (examination && Object.keys(examination).length > 0) {
+      appointment.examination = {
+        ...appointment.examination, // Keep existing examination
+        ...examination, // Override with new examination
+        recordedAt: new Date(),
+        recordedBy: user.id
+      };
+      console.log('Examination updated');
+    }
+
+    // ✅ Update investigations if provided
+    if (investigations && Object.keys(investigations).length > 0) {
+      appointment.investigations = {
+        ...appointment.investigations, // Keep existing investigations
+        ...investigations, // Override with new investigations
+        recordedAt: new Date(),
+        recordedBy: user.id
+      };
+      console.log('Investigations updated');
+    }
+
+    // ✅ Update treatment if provided
+    if (treatment && Object.keys(treatment).length > 0) {
+      appointment.treatment = {
+        ...appointment.treatment, // Keep existing treatment
+        ...treatment, // Override with new treatment
+        recordedAt: new Date(),
+        recordedBy: user.id
+      };
+      console.log('Treatment updated');
+    }
+
+    // ✅ Update follow-up if provided
+    if (followUp && Object.keys(followUp).length > 0) {
+      appointment.followUp = {
+        ...appointment.followUp, // Keep existing follow-up
+        ...followUp, // Override with new follow-up
+        recordedAt: new Date(),
+        recordedBy: user.id
+      };
+      console.log('Follow-up updated');
+    }
+
+    // ✅ Update doctor notes if provided
+    if (doctorNotes !== undefined) {
+      appointment.doctorNotes = doctorNotes;
+      console.log('Doctor notes updated');
+    }
+
+    // ✅ Update appointment metadata
+    appointment.lastModifiedBy = user.id;
+    appointment.updatedAt = new Date();
+    
+    // ✅ Update status progression
+    if (appointment.status === 'Scheduled') {
+      appointment.status = 'In-Progress';
+      console.log('Status updated to In-Progress');
+    }
+    
+    // ✅ Update workflow phase based on what was completed
+    if (examination?.provisionalDiagnosis && appointment.workflowPhase === 'in-assessment') {
+      appointment.workflowPhase = 'diagnosed';
+      console.log('Workflow phase updated to diagnosed');
+    } else if ((vitals || chiefComplaints) && appointment.workflowPhase === 'registered') {
+      appointment.workflowPhase = 'in-assessment';
+      console.log('Workflow phase updated to in-assessment');
+    }
+
+    // ✅ Save the updated appointment
+    const savedAppointment = await appointment.save();
+    console.log('Appointment assessment saved successfully');
+
+    // ✅ Update completion phases based on what was provided
+    try {
+      if (vitals && appointment.updateCompletionPhase) {
+        await appointment.updateCompletionPhase('vitalsRecorded', user.id);
+        console.log('Vitals completion phase updated');
+      }
+      
+      if (examination?.provisionalDiagnosis && appointment.updateCompletionPhase) {
+        await appointment.updateCompletionPhase('diagnosisCompleted', user.id);
+        console.log('Diagnosis completion phase updated');
+      }
+      
+      if ((vitals || chiefComplaints || examination) && appointment.updateCompletionPhase) {
+        await appointment.updateCompletionPhase('doctorAssessment', user.id);
+        console.log('Doctor assessment completion phase updated');
+      }
+    } catch (phaseError) {
+      console.warn('Could not update completion phases:', phaseError.message);
+    }
+
+    // ✅ Update patient workflow status if significant progress was made
+    try {
+      const patient = await Patient.findOne({ patientId: appointment.patientId });
+      if (patient) {
+        let newWorkflowStatus = patient.workflowStatus;
+        
+        if (examination?.provisionalDiagnosis) {
+          newWorkflowStatus = 'In Progress';
+        } else if (vitals || chiefComplaints) {
+          newWorkflowStatus = 'Doctor Opened';
+        }
+        
+        if (newWorkflowStatus !== patient.workflowStatus) {
+          await Patient.findOneAndUpdate(
+            { patientId: appointment.patientId },
+            {
+              workflowStatus: newWorkflowStatus,
+              lastActivity: new Date()
+            }
+          );
+          console.log(`Patient workflow status updated to: ${newWorkflowStatus}`);
+        }
+      }
+    } catch (patientError) {
+      console.warn('Could not update patient workflow status:', patientError.message);
+    }
+
+    // ✅ Return populated appointment with comprehensive data
+    const populatedAppointment = await Appointment.findOne({ appointmentId })
+      .populate('doctorId', 'profile doctorDetails')
+      .populate('assignedBy', 'profile')
+      .populate('createdBy', 'profile')
+      .populate('lastModifiedBy', 'profile');
+
+    console.log('=== UPDATE APPOINTMENT ASSESSMENT REQUEST END ===');
+    return sendSuccess(res, populatedAppointment, 'Medical assessment updated successfully');
+
+  } catch (error) {
+    console.error('=== UPDATE APPOINTMENT ASSESSMENT ERROR ===');
+    console.error('Error:', error);
+    console.error('Error stack:', error.stack);
+    return sendError(res, 'Error updating medical assessment', 500, error.message);
+  }
+};
+
+// ✅ Keep the original vitals-only endpoint for backward compatibility
+export const updateAppointmentVitals = async (req, res) => {
+  console.log('=== UPDATE APPOINTMENT VITALS (LEGACY) REQUEST START ===');
+  console.log('Redirecting to comprehensive assessment endpoint...');
+  
+  // Transform vitals-only request to assessment format
+  const assessmentData = {
+    vitals: req.body.vitals || req.body
+  };
+  
+  // Update request body and delegate to comprehensive assessment handler
+  req.body = assessmentData;
+  return updateAppointmentAssessment(req, res);
+};
+
+// export { 
+//   assignDoctorToAppointment, 
+//   updateAppointmentStatus,
+//   createAppointmentPrescription,
+//   getAppointmentById,
+//   getAppointmentDocuments,
+//   addAppointmentDocument,
+//   updateAppointmentDocument,
+//   deleteAppointmentDocument,
+//   updateAppointmentVitals, // ✅ Legacy endpoint
+//   updateAppointmentAssessment // ✅ NEW: Comprehensive assessment endpoint
+// };

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import ManageDocumentsModal from '../common/ManageDocumentsModal';
-import DoctorAppointmentModal from './DoctorAppointmentModal'; // ✅ Use the updated modal
+import DoctorAppointmentModal from './DoctorAppointmentModal';
 
 const DoctorWorklistTable = ({ 
   patients = [], 
@@ -22,17 +22,17 @@ const DoctorWorklistTable = ({
     ageSex: true,
     description: true,
     location: true,
-    date: true,
-    report: true,
+    scheduledDate: true, // ✅ CHANGED: Show scheduled date instead of registration
+    vitals: true, // ✅ NEW: Show vitals
+    appointmentDetails: true, // ✅ NEW: Show appointment details
     documents: true,
-    appointments: true,
   });
 
   // Documents modal state
   const [selectedPatientForDocuments, setSelectedPatientForDocuments] = useState(null);
   const [showDocumentsModal, setShowDocumentsModal] = useState(false);
 
-  // ✅ Appointments modal state
+  // Appointments modal state
   const [selectedPatientForAppointments, setSelectedPatientForAppointments] = useState(null);
   const [showDoctorAppointmentModal, setShowDoctorAppointmentModal] = useState(false);
 
@@ -40,13 +40,11 @@ const DoctorWorklistTable = ({
 
   const getStatusIcon = (status) => {
     const statusMap = {
-      'New': { color: 'bg-slate-500', textColor: 'text-slate-700', bgColor: 'bg-slate-50 border-slate-200' },
-      'Assigned': { color: 'bg-amber-500', textColor: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200' },
-      'Revisited': { color: 'bg-orange-500', textColor: 'text-orange-700', bgColor: 'bg-orange-50 border-orange-200' },
-      'Doctor Opened': { color: 'bg-blue-500', textColor: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200' },
-      'In Progress': { color: 'bg-indigo-500', textColor: 'text-indigo-700', bgColor: 'bg-indigo-50 border-indigo-200' },
-      'Reported': { color: 'bg-emerald-500', textColor: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200' },
-      'Completed': { color: 'bg-green-600', textColor: 'text-green-700', bgColor: 'bg-green-50 border-green-200' }
+      'Scheduled': { color: 'bg-blue-500', textColor: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200' },
+      'Confirmed': { color: 'bg-green-500', textColor: 'text-green-700', bgColor: 'bg-green-50 border-green-200' },
+      'In-Progress': { color: 'bg-indigo-500', textColor: 'text-indigo-700', bgColor: 'bg-indigo-50 border-indigo-200' },
+      'Completed': { color: 'bg-emerald-600', textColor: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200' },
+      'Cancelled': { color: 'bg-red-500', textColor: 'text-red-700', bgColor: 'bg-red-50 border-red-200' }
     };
     
     const statusInfo = statusMap[status] || { color: 'bg-gray-400', textColor: 'text-gray-700', bgColor: 'bg-gray-50 border-gray-200' };
@@ -55,7 +53,7 @@ const DoctorWorklistTable = ({
       <div className="flex items-center gap-1.5">
         <div className={`w-1.5 h-1.5 rounded-full ${statusInfo.color}`}></div>
         <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${statusInfo.bgColor} ${statusInfo.textColor}`}>
-          {status || 'New'}
+          {status || 'Scheduled'}
         </span>
       </div>
     );
@@ -70,37 +68,20 @@ const DoctorWorklistTable = ({
     });
   };
 
-  const getNextStatus = (currentStatus) => {
-    const workflow = {
-      'Assigned': 'Doctor Opened',
-      'Doctor Opened': 'In Progress',
-      'In Progress': 'Reported',
-      'Reported': 'Completed'
-    };
-    return workflow[currentStatus];
+  const formatTime = (time) => {
+    if (!time) return 'N/A';
+    return time;
   };
 
   const handleStatusUpdate = (patient, newStatus) => {
-    // ✅ UPDATED: Update appointment status, not patient status
-    const latestAppointment = patient.latestAppointment || patient.doctorAppointments?.[0];
+    // ✅ UPDATED: Update appointment status using the latestAppointment data
+    const appointment = patient.latestAppointment || patient.currentAppointment;
     
-    if (latestAppointment) {
-      onUpdateStatus && onUpdateStatus(latestAppointment.appointmentId, newStatus);
+    if (appointment && appointment.appointmentId) {
+      onUpdateStatus && onUpdateStatus(appointment.appointmentId, newStatus);
     } else {
       console.error('No appointment found for patient:', patient.patientId);
     }
-  };
-
-  const handleCreatePrescription = (patient) => {
-    console.log('Creating prescription for patient:', patient);
-    setSelectedPatientForPrescription(patient);
-    setShowPrescriptionModal(true);
-  };
-
-  const handlePrescriptionSuccess = (prescription) => {
-    console.log('Prescription created successfully:', prescription);
-    setShowPrescriptionModal(false);
-    setSelectedPatientForPrescription(null);
   };
 
   const toggleColumn = (columnKey) => {
@@ -126,7 +107,6 @@ const DoctorWorklistTable = ({
     console.log('Documents operation successful:', result);
   };
 
-  // ✅ Appointment handlers
   const handleAppointmentClick = (patient) => {
     setSelectedPatientForAppointments(patient);
     setShowDoctorAppointmentModal(true);
@@ -150,7 +130,7 @@ const DoctorWorklistTable = ({
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <span className="text-xs text-gray-600 font-medium">Loading patients...</span>
+            <span className="text-xs text-gray-600 font-medium">Loading assigned patients...</span>
           </div>
         </div>
       </div>
@@ -165,7 +145,7 @@ const DoctorWorklistTable = ({
         {showWorkflowFilter && (
           <div className="bg-gray-50 border-b border-gray-300 px-3 py-2 flex-shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-600">Workflow Status:</span>
+              <span className="text-xs font-medium text-gray-600">Appointment Status:</span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onWorkflowFilterChange && onWorkflowFilterChange('all')}
@@ -219,7 +199,7 @@ const DoctorWorklistTable = ({
             <thead className="bg-gray-100 sticky top-0 z-10">
               <tr>
                 {columnConfig.status && (
-                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[90px]">
+                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[100px]">
                     STATUS
                   </th>
                 )}
@@ -240,36 +220,34 @@ const DoctorWorklistTable = ({
                 )}
                 {columnConfig.description && (
                   <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[160px]">
-                    DESCRIPTION
+                    CHIEF COMPLAINT
                   </th>
                 )}
                 {columnConfig.location && (
                   <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[120px]">
-                    LOCATION
+                    LAB/LOCATION
                   </th>
                 )}
-                {columnConfig.date && (
-                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[100px]">
-                    DATE
+                {columnConfig.scheduledDate && (
+                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[120px]">
+                    SCHEDULED
                   </th>
                 )}
-                {columnConfig.report && (
-                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[100px]">
-                    REPORT
+                {columnConfig.vitals && (
+                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[150px]">
+                    VITALS
+                  </th>
+                )}
+                {columnConfig.appointmentDetails && (
+                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[120px]">
+                    APPOINTMENT
                   </th>
                 )}
                 {columnConfig.documents && (
                   <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[100px]">
-                    Documents
+                    ACTIONS
                   </th>
                 )}
-                {/* ✅ ADD: Appointments column */}
-                {columnConfig.appointments && (
-                  <th className="border border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700 uppercase bg-gray-200 min-w-[100px]">
-                    Appointments
-                  </th>
-                )}
-               
               </tr>
             </thead>
 
@@ -293,7 +271,9 @@ const DoctorWorklistTable = ({
                 </tr>
               ) : (
                 patients.map((patient, index) => {
-                  const nextStatus = getNextStatus(patient.workflowStatus);
+                  // ✅ UPDATED: Extract data from the backend structure
+                  const appointment = patient.latestAppointment || patient.currentAppointment || {};
+                  const appointmentStatus = appointment.status || patient.workflowStatus || 'Scheduled';
                   
                   return (
                     <tr
@@ -303,10 +283,10 @@ const DoctorWorklistTable = ({
                       }`}
                       onClick={() => onPatientSelect && onPatientSelect(patient)}
                     >
-                      {/* STATUS */}
+                      {/* STATUS - Use appointment status */}
                       {columnConfig.status && (
                         <td className="border border-gray-300 px-2 py-2 text-xs">
-                          {getStatusIcon(patient.workflowStatus || patient.status)}
+                          {getStatusIcon(appointmentStatus)}
                         </td>
                       )}
 
@@ -332,9 +312,9 @@ const DoctorWorklistTable = ({
                               <div className="text-xs font-semibold text-gray-900 truncate">
                                 {patient.personalInfo?.fullName || 'Unknown'}
                               </div>
-                              {patient.assignment?.doctorName && (
+                              {appointment.appointmentId && (
                                 <div className="text-xs text-gray-500 truncate">
-                                  Dr. {patient.assignment.doctorName}
+                                  {appointment.appointmentId}
                                 </div>
                               )}
                             </div>
@@ -351,97 +331,95 @@ const DoctorWorklistTable = ({
                         </td>
                       )}
 
-                      {/* DESCRIPTION */}
+                      {/* CHIEF COMPLAINT/DESCRIPTION */}
                       {columnConfig.description && (
                         <td className="border border-gray-300 px-2 py-2 text-xs">
                           <div className="text-gray-900 line-clamp-2">
-                            {patient.currentVisit?.complaints?.chief || patient.description || 'No description'}
+                            {appointment.description || patient.description || 'No chief complaint'}
                           </div>
                         </td>
                       )}
 
-                      {/* LOCATION */}
+                      {/* LAB/LOCATION */}
                       {columnConfig.location && (
                         <td className="border border-gray-300 px-2 py-2 text-xs">
                           <div className="font-medium text-gray-900 truncate">
                             {patient.labName || patient.lab?.labName || patient.labId || 'N/A'}
                           </div>
                           <div className="text-xs text-gray-500 truncate">
-                            {patient.currentVisit?.appointment?.mode || 'In-person'}
+                            {appointment.mode || 'In-person'}
                           </div>
                         </td>
                       )}
 
-                      {/* DATE */}
-                      {columnConfig.date && (
-                        <td className="border border-gray-300 px-2 py-2 text-xs text-center">
-                          <div className="text-gray-900">
-                            {formatDate(patient.currentVisit?.appointment?.date || patient.lastActivity || patient.registrationDate)}
+                      {/* SCHEDULED DATE & TIME */}
+                      {columnConfig.scheduledDate && (
+                        <td className="border border-gray-300 px-2 py-2 text-xs">
+                          <div className="text-gray-900 font-medium">
+                            {formatDate(appointment.date || appointment.scheduledDate)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {formatTime(appointment.time || appointment.scheduledTime)}
                           </div>
                         </td>
                       )}
 
-                      {/* REPORT */}
-                      {columnConfig.report && (
-                        <td className="border border-gray-300 px-2 py-2 text-xs text-center">
-                          {patient.reportUrl || patient.currentVisit?.reportUrl ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onViewReport && onViewReport(patient);
-                              }}
-                              className="inline-flex items-center px-1.5 py-0.5 border border-purple-300 text-xs font-medium rounded text-purple-700 bg-purple-50 hover:bg-purple-100"
-                            >
-                              View Report
-                            </button>
-                          ) : (
-                            <span className="text-gray-400 text-xs">No Report</span>
-                          )}
+                      {/* VITALS */}
+                      {columnConfig.vitals && (
+                        <td className="border border-gray-300 px-2 py-2 text-xs">
+                          <div className="text-gray-900 text-xs">
+                            {appointment.vitalsDescription || 'No vitals recorded'}
+                          </div>
                         </td>
                       )}
 
-                      {/* DOCUMENTS */}
-                      {columnConfig.documents && (
-                        <td className="border border-gray-300 px-2 py-2 text-xs text-center">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDocumentsClick(patient);
-                            }}
-                            className="inline-flex items-center px-1.5 py-0.5 border border-orange-300 text-xs font-medium rounded text-orange-700 bg-orange-50 hover:bg-orange-100"
-                          >
-                            View
-                            {patient.documents && patient.documents.length > 0 && (
-                              <span className="ml-1 px-1 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs">
-                                {patient.documents.length}
-                              </span>
-                            )}
-                          </button>
-                        </td>
-                      )}
-
-                      {/* ✅ ADD: APPOINTMENTS COLUMN */}
-                      {columnConfig.appointments && (
-                        <td className="border border-gray-300 px-2 py-2 text-xs text-center">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAppointmentClick(patient);
-                            }}
-                            className="inline-flex items-center px-1.5 py-0.5 border border-indigo-300 text-xs font-medium rounded text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
-                          >
-                            View
-                            {patient.appointments?.stats?.totalAppointments > 0 && (
-                              <span className="ml-1 px-1 py-0.5 bg-indigo-200 text-indigo-800 rounded-full text-xs">
-                                {patient.appointments.stats.totalAppointments}
-                              </span>
-                            )}
-                          </button>
+                      {/* APPOINTMENT DETAILS */}
+                      {columnConfig.appointmentDetails && (
+                        <td className="border border-gray-300 px-2 py-2 text-xs">
+                          <div className="space-y-1">
+                            <div className="text-xs font-medium text-gray-900">
+                              {appointment.appointmentType || 'Consultation'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {appointment.doctor || 'Dr. ' + (user?.profile?.firstName || 'Doctor')}
+                            </div>
+                          </div>
                         </td>
                       )}
 
                       {/* ACTIONS */}
-                     
+                      {columnConfig.documents && (
+                        <td className="border border-gray-300 px-2 py-2 text-xs">
+                          <div className="flex flex-col gap-1">
+                            {/* Documents Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDocumentsClick(patient);
+                              }}
+                              className="inline-flex items-center px-1.5 py-0.5 border border-orange-300 text-xs font-medium rounded text-orange-700 bg-orange-50 hover:bg-orange-100"
+                            >
+                              Docs
+                              {patient.documents && patient.documents.length > 0 && (
+                                <span className="ml-1 px-1 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs">
+                                  {patient.documents.length}
+                                </span>
+                              )}
+                            </button>
+                            
+                            {/* Appointment Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAppointmentClick(patient);
+                              }}
+                              className="inline-flex items-center px-1.5 py-0.5 border border-indigo-300 text-xs font-medium rounded text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                            >
+                              Details
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
@@ -455,22 +433,14 @@ const DoctorWorklistTable = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-xs text-gray-700 font-medium">
-                Showing <span className="font-bold text-gray-900">{patients.length}</span> patient{patients.length !== 1 ? 's' : ''}
-                {stats?.total && stats.total !== patients.length && (
-                  <span> of <span className="font-bold text-gray-900">{stats.total}</span> total</span>
+                Showing <span className="font-bold text-gray-900">{patients.length}</span> assigned patient{patients.length !== 1 ? 's' : ''}
+                {stats?.totalAppointments && stats.totalAppointments !== patients.length && (
+                  <span> of <span className="font-bold text-gray-900">{stats.totalAppointments}</span> appointments</span>
                 )}
               </div>
-              {stats?.total && (
-                <div className="flex items-center gap-1">
-                  <div className="w-16 bg-gray-300 rounded-full h-1">
-                    <div 
-                      className="bg-blue-600 h-1 rounded-full transition-all duration-300" 
-                      style={{ width: `${(patients.length / stats.total) * 100}%` }}
-                    ></div>
-                  </div>
-                  <span className="text-xs text-gray-500">
-                    {Math.round((patients.length / stats.total) * 100)}%
-                  </span>
+              {stats?.uniquePatients && (
+                <div className="text-xs text-gray-500">
+                  ({stats.uniquePatients} unique patients)
                 </div>
               )}
             </div>
@@ -495,7 +465,7 @@ const DoctorWorklistTable = ({
         onSuccess={handleDocumentsSuccess}
       />
 
-      {/* ✅ Doctor Appointments Modal - Uses PrescriptionPage for creating prescriptions */}
+      {/* Doctor Appointments Modal */}
       <DoctorAppointmentModal
         isOpen={showDoctorAppointmentModal}
         onClose={handleAppointmentModalClose}

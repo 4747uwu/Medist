@@ -109,7 +109,9 @@ const appointmentSchema = new mongoose.Schema({
       type: String,
       enum: ['Mild', 'Moderate', 'Severe', 'Critical'],
       default: 'Moderate'
-    }
+    },
+    recordedAt: Date,
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   
   // Vitals recorded during appointment
@@ -142,14 +144,18 @@ const appointmentSchema = new mongoose.Schema({
       value: Number,
       type: { type: String, enum: ['Fasting', 'Random', 'Post-meal'], default: 'Random' },
       unit: { type: String, default: 'mg/dL' }
-    }
+    },
+    recordedAt: Date,
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   
   // Clinical examination
   examination: {
     physicalFindings: String,
     provisionalDiagnosis: String,
-    differentialDiagnosis: [String]
+    differentialDiagnosis: [String],
+    recordedAt: Date,
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   
   // ✅ UPDATED: Multiple prescriptions per appointment
@@ -180,7 +186,9 @@ const appointmentSchema = new mongoose.Schema({
     nextAppointmentDate: Date,
     nextAppointmentId: String,
     instructions: String,
-    notes: String
+    notes: String,
+    recordedAt: Date,
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   
   // Assignment tracking
@@ -204,8 +212,91 @@ const appointmentSchema = new mongoose.Schema({
   lastModifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
+  },
   
+  // ✅ NEW: Track appointment completion phases
+  completionStatus: {
+    clinicRegistration: {
+      completed: { type: Boolean, default: true },
+      completedAt: { type: Date, default: Date.now },
+      completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
+    doctorAssessment: {
+      completed: { type: Boolean, default: false },
+      completedAt: Date,
+      completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
+    vitalsRecorded: {
+      completed: { type: Boolean, default: false },
+      completedAt: Date,
+      completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
+    diagnosisCompleted: {
+      completed: { type: Boolean, default: false },
+      completedAt: Date,
+      completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
+    prescriptionIssued: {
+      completed: { type: Boolean, default: false },
+      completedAt: Date,
+      completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }
+  },
+  
+  // ✅ NEW: Workflow phase tracking
+  workflowPhase: {
+    type: String,
+    enum: ['registered', 'assigned', 'in-assessment', 'diagnosed', 'prescribed', 'completed'],
+    default: 'registered'
+  },
+  
+  // ✅ NEW: Who can edit what phases
+  editPermissions: {
+    clinic: {
+      canEditBasicInfo: { type: Boolean, default: true },
+      canEditScheduling: { type: Boolean, default: true },
+      canEditMedicalHistory: { type: Boolean, default: true }
+    },
+    doctor: {
+      canEditVitals: { type: Boolean, default: true },
+      canEditExamination: { type: Boolean, default: true },
+      canEditDiagnosis: { type: Boolean, default: true },
+      canEditPrescription: { type: Boolean, default: true }
+    }
+  },
+  
+  // ✅ ADD: Comprehensive medical assessment fields
+  investigations: {
+    testsRecommended: [{
+      testName: String,
+      testCode: String,
+      urgency: { type: String, enum: ['Routine', 'Urgent', 'STAT'], default: 'Routine' },
+      notes: String
+    }],
+    pastReportsReviewed: [String],
+    recordedAt: Date,
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  },
+  
+  treatment: {
+    medicines: [{
+      medicineName: String,
+      medicineCode: String,
+      dosage: String,
+      frequency: String,
+      duration: String,
+      timing: String,
+      instructions: String
+    }],
+    lifestyleAdvice: String,
+    dietSuggestions: String,
+    prescriptionIssued: { type: Boolean, default: false },
+    prescriptionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Prescription' },
+    prescriptionDate: Date,
+    recordedAt: Date,
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  },
+
 }, {
   timestamps: true
 });
@@ -273,6 +364,23 @@ appointmentSchema.methods.updateDocument = function(documentId, updateData) {
   }
   
   return this.save();
+};
+
+// ✅ NEW: Method to update completion phase
+appointmentSchema.methods.updateCompletionPhase = function(phase, userId) {
+  if (this.completionStatus[phase]) {
+    this.completionStatus[phase].completed = true;
+    this.completionStatus[phase].completedAt = new Date();
+    this.completionStatus[phase].completedBy = userId;
+    
+    // Update workflow phase based on completion
+    if (phase === 'doctorAssessment') this.workflowPhase = 'in-assessment';
+    if (phase === 'vitalsRecorded') this.workflowPhase = 'in-assessment';
+    if (phase === 'diagnosisCompleted') this.workflowPhase = 'diagnosed';
+    if (phase === 'prescriptionIssued') this.workflowPhase = 'prescribed';
+    
+    return this.save();
+  }
 };
 
 // Static method to generate appointment ID

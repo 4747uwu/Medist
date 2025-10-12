@@ -4,6 +4,7 @@ import Appointment from '../modals/Appointment.js';
 import Lab from '../modals/Lab.js';
 import Prescription from '../modals/Prescription.js';
 import { sendSuccess, sendError } from '../utils/helpers.js';
+import mongoose from 'mongoose';
 
 // Helper function to get IST dates
 const getISTDate = (utcDate = new Date()) => {
@@ -51,38 +52,138 @@ const getISTDateRange = (dateType) => {
   return { start: startUTC, end: endUTC };
 };
 
-// @desc    Get all patients for clinic
+// @desc    Get all patients for clinic (OPTIMIZED)
 // @route   GET /api/clinic/patients
 // @access  Private (Clinic only)
 export const getAllPatients = async (req, res) => {
-  console.log('=== GET CLINIC PATIENTS REQUEST START ===');
+  console.log('=== GET CLINIC PATIENTS REQUEST START (OPTIMIZED) ===');
   console.log('User ID:', req.user?.id);
   console.log('Lab ID:', req.user?.clinicDetails?.labId);
   console.log('Query params:', req.query);
 
   try {
-    const {
-      page = 1,
-      limit = 50,
-      search = '',
-      status = 'all',
-      workflowStatus = 'all',
-      dateFilter = 'all'
-    } = req.query;
+    const startTime = Date.now();
+    const limit = parseInt(req.query.limit) || 50;
+    const page = parseInt(req.query.page) || 1;
+    const skip = (page - 1) * limit;
 
     const labId = req.user.clinicDetails?.labId;
     if (!labId) {
       return sendError(res, 'Lab ID not found for clinic', 400);
     }
 
-    console.log('Query parameters:', { page, limit, search, status, workflowStatus, dateFilter });
+    // 🔧 STEP 1: Build lean query filters with optimized date handling
+    const queryFilters = { labId };
+    let filterStartDate = null;
+    let filterEndDate = null;
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
 
-    // Build query
-    const query = { labId };
+    const {
+      search = '',
+      status = 'all',
+      workflowStatus = 'all',
+      dateFilter = 'all'
+    } = req.query;
 
-    // Add search filter
+    // ✅ OPTIMIZED: Date filtering with IST handling (same as studies function)
+    if (dateFilter !== 'all') {
+      const preset = dateFilter;
+      
+      switch (preset) {
+        case 'today':
+          const currentTimeIST = new Date(Date.now() + IST_OFFSET);
+          const todayStartIST = new Date(
+            currentTimeIST.getFullYear(),
+            currentTimeIST.getMonth(),
+            currentTimeIST.getDate(),
+            0, 0, 0, 0
+          );
+          const todayEndIST = new Date(
+            currentTimeIST.getFullYear(),
+            currentTimeIST.getMonth(),
+            currentTimeIST.getDate(),
+            23, 59, 59, 999
+          );
+          filterStartDate = new Date(todayStartIST.getTime() - IST_OFFSET);
+          filterEndDate = new Date(todayEndIST.getTime() - IST_OFFSET);
+          break;
+
+        case 'yesterday':
+          const currentTimeISTYesterday = new Date(Date.now() + IST_OFFSET);
+          const yesterdayIST = new Date(currentTimeISTYesterday.getTime() - 86400000);
+          const yesterdayStartIST = new Date(
+            yesterdayIST.getFullYear(),
+            yesterdayIST.getMonth(),
+            yesterdayIST.getDate(),
+            0, 0, 0, 0
+          );
+          const yesterdayEndIST = new Date(
+            yesterdayIST.getFullYear(),
+            yesterdayIST.getMonth(),
+            yesterdayIST.getDate(),
+            23, 59, 59, 999
+          );
+          filterStartDate = new Date(yesterdayStartIST.getTime() - IST_OFFSET);
+          filterEndDate = new Date(yesterdayEndIST.getTime() - IST_OFFSET);
+          break;
+
+        case 'week':
+          const currentTimeISTWeek = new Date(Date.now() + IST_OFFSET);
+          const dayOfWeek = currentTimeISTWeek.getDay();
+          const weekStartIST = new Date(
+            currentTimeISTWeek.getFullYear(),
+            currentTimeISTWeek.getMonth(),
+            currentTimeISTWeek.getDate() - dayOfWeek,
+            0, 0, 0, 0
+          );
+          const weekEndIST = new Date(currentTimeISTWeek.getTime());
+          filterStartDate = new Date(weekStartIST.getTime() - IST_OFFSET);
+          filterEndDate = new Date(weekEndIST.getTime() - IST_OFFSET);
+          break;
+
+        case 'month':
+          const currentTimeISTMonth = new Date(Date.now() + IST_OFFSET);
+          const monthStartIST = new Date(
+            currentTimeISTMonth.getFullYear(),
+            currentTimeISTMonth.getMonth(),
+            1,
+            0, 0, 0, 0
+          );
+          const monthEndIST = new Date(currentTimeISTMonth.getTime());
+          filterStartDate = new Date(monthStartIST.getTime() - IST_OFFSET);
+          filterEndDate = new Date(monthEndIST.getTime() - IST_OFFSET);
+          break;
+
+        default:
+          // Default to today
+          const defaultCurrentTimeIST = new Date(Date.now() + IST_OFFSET);
+          const defaultTodayStartIST = new Date(
+            defaultCurrentTimeIST.getFullYear(),
+            defaultCurrentTimeIST.getMonth(),
+            defaultCurrentTimeIST.getDate(),
+            0, 0, 0, 0
+          );
+          const defaultTodayEndIST = new Date(
+            defaultCurrentTimeIST.getFullYear(),
+            defaultCurrentTimeIST.getMonth(),
+            defaultCurrentTimeIST.getDate(),
+            23, 59, 59, 999
+          );
+          filterStartDate = new Date(defaultTodayStartIST.getTime() - IST_OFFSET);
+          filterEndDate = new Date(defaultTodayEndIST.getTime() - IST_OFFSET);
+      }
+
+      // Apply date filter to registrationDate
+      if (filterStartDate || filterEndDate) {
+        queryFilters.registrationDate = {};
+        if (filterStartDate) queryFilters.registrationDate.$gte = filterStartDate;
+        if (filterEndDate) queryFilters.registrationDate.$lte = filterEndDate;
+      }
+    }
+
+    // ✅ OPTIMIZED: Search filter with $or array
     if (search) {
-      query.$or = [
+      queryFilters.$or = [
         { 'personalInfo.fullName': { $regex: search, $options: 'i' } },
         { patientId: { $regex: search, $options: 'i' } },
         { 'contactInfo.phone': { $regex: search, $options: 'i' } },
@@ -90,367 +191,483 @@ export const getAllPatients = async (req, res) => {
       ];
     }
 
-    // Add status filter
+    // ✅ OPTIMIZED: Status filtering with pre-defined arrays
     if (status !== 'all') {
-      query.status = status;
+      queryFilters.status = status;
     }
 
-    // Add workflow status filter with correct mapping
     if (workflowStatus !== 'all') {
-      console.log('Filtering by workflow status:', workflowStatus);
+      const statusMap = {
+        'pending': ['New', 'Assigned', 'Revisited'],
+        'inprogress': ['Doctor Opened', 'In Progress', 'Reported'],
+        'completed': ['Completed']
+      };
       
-      if (workflowStatus === 'pending') {
-        query.workflowStatus = { $in: ['New', 'Assigned', 'Revisited'] };
-      } else if (workflowStatus === 'inprogress') {
-        query.workflowStatus = { $in: ['Doctor Opened', 'In Progress', 'Reported'] };
-      } else if (workflowStatus === 'completed') {
-        query.workflowStatus = 'Completed';
+      const statuses = statusMap[workflowStatus];
+      if (statuses) {
+        queryFilters.workflowStatus = statuses.length === 1 ? statuses[0] : { $in: statuses };
       } else {
-        query.workflowStatus = workflowStatus;
+        queryFilters.workflowStatus = workflowStatus;
       }
     }
 
-    // Date filtering using registrationDate with IST
-    if (dateFilter !== 'all') {
-      const currentUTC = new Date();
-      const currentIST = new Date(currentUTC.getTime() + (5.5 * 60 * 60 * 1000));
+    console.log(`🔍 Query filters:`, JSON.stringify(queryFilters, null, 2));
+
+    // 🔥 STEP 2: Ultra-optimized aggregation pipeline
+    const pipeline = [
+      // 🔥 CRITICAL: Start with most selective match first
+      { $match: queryFilters },
       
-      console.log('Current UTC time:', currentUTC.toISOString());
-      console.log('Current IST time:', currentIST.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+      // 🔥 PERFORMANCE: Sort before project to use index efficiently
+      { $sort: { registrationDate: -1 } },
       
-      const dateRange = getISTDateRange(dateFilter);
-      if (dateRange.start && dateRange.end) {
-        query.registrationDate = { $gte: dateRange.start, $lte: dateRange.end };
-        
-        // Convert back to IST for logging
-        const startIST = new Date(dateRange.start.getTime() + (5.5 * 60 * 60 * 1000));
-        const endIST = new Date(dateRange.end.getTime() + (5.5 * 60 * 60 * 1000));
-        
-        console.log(`IST ${dateFilter} range:`, {
-          startUTC: dateRange.start.toISOString(),
-          endUTC: dateRange.end.toISOString(),
-          startIST: startIST.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-          endIST: endIST.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
-        });
+      // 🔥 CRITICAL: Apply pagination early
+      { $skip: skip },
+      { $limit: Math.min(limit, 1000) },
+      
+      // 🔥 PERFORMANCE: Project only essential fields
+      {
+        $project: {
+          _id: 1,
+          patientId: 1,
+          labId: 1,
+          registrationDate: 1,
+          status: 1,
+          workflowStatus: 1,
+          assignedBy: 1,
+          photo: 1,
+          personalInfo: 1,
+          contactInfo: 1,
+          emergencyContact: 1,
+          medicalHistory: 1,
+          'prescriptions.list': 1,
+          'prescriptions.stats': 1,
+          'appointments.list': 1,
+          'appointments.stats': 1,
+          assignment: 1,
+          lastActivity: 1,
+          documents: 1,
+          createdAt: 1,
+          updatedAt: 1
+        }
       }
-    }
+    ];
 
-    console.log('Final MongoDB query:', JSON.stringify(query, null, 2));
+    // 🔥 STEP 3: Execute optimized parallel queries
+    console.log(`🚀 Executing optimized patient query...`);
+    const queryStart = Date.now();
 
-    // Execute query with pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    const [patients, total] = await Promise.all([
-      Patient.find(query)
-        .populate('assignedBy', 'profile.firstName profile.lastName')
-        .sort({ registrationDate: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Patient.countDocuments(query)
+    const [patientsResult, totalCountResult] = await Promise.allSettled([
+      Patient.aggregate(pipeline).allowDiskUse(false),
+      Patient.countDocuments(queryFilters)
     ]);
 
-    console.log(`MongoDB returned ${patients.length} patients out of ${total} total`);
-
-    // Log patient registration dates for debugging
-    if (patients.length > 0) {
-      console.log('Patient registration dates analysis:');
-      patients.forEach(patient => {
-        const regDateUTC = new Date(patient.registrationDate);
-        const regDateIST = new Date(regDateUTC.getTime() + (5.5 * 60 * 60 * 1000));
-        
-        // Get IST date components for comparison
-        const regISTYear = regDateIST.getFullYear();
-        const regISTMonth = regDateIST.getMonth();
-        const regISTDate = regDateIST.getDate();
-        
-        // Get current IST date components
-        const nowIST = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
-        const nowISTYear = nowIST.getFullYear();
-        const nowISTMonth = nowIST.getMonth();
-        const nowISTDate = nowIST.getDate();
-        
-        let dayLabel = 'other';
-        if (regISTYear === nowISTYear && regISTMonth === nowISTMonth) {
-          if (regISTDate === nowISTDate) dayLabel = 'today';
-          else if (regISTDate === nowISTDate - 1) dayLabel = 'yesterday';
-          else if (regISTDate > nowISTDate - 7) dayLabel = 'this week';
-        }
-        
-        console.log(`Patient ${patient.patientId}:`, {
-          utc: regDateUTC.toISOString(),
-          ist: regDateIST.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-          istDate: `${regISTDate}/${regISTMonth + 1}/${regISTYear}`,
-          dayLabel
-        });
-      });
+    // Handle potential errors
+    if (patientsResult.status === 'rejected') {
+      throw new Error(`Patients query failed: ${patientsResult.reason.message}`);
+    }
+    if (totalCountResult.status === 'rejected') {
+      console.warn('Count query failed, using patients length:', totalCountResult.reason.message);
     }
 
-    // Process patients with enhanced appointment data
-    const patientsWithVisitsAndLabs = await Promise.all(
-      patients.map(async (patient) => {
-        const lab = await Lab.findOne({ labId: patient.labId }).lean();
+    const patients = patientsResult.value;
+    const totalPatients = totalCountResult.status === 'fulfilled' ? totalCountResult.value : patients.length;
+    
+    const queryTime = Date.now() - queryStart;
+    console.log(`⚡ Core query completed in ${queryTime}ms - found ${patients.length} patients`);
 
-        // Get visit information if available
-        let currentVisit = null;
-        if (patient.currentVisitId) {
-          currentVisit = await Visit.findOne({ visitId: patient.currentVisitId }).lean();
-        }
+    // 🔥 STEP 4: Optimized batch lookups
+    const lookupMaps = {
+      labs: new Map(),
+      users: new Map(),
+      appointments: new Map(),
+      prescriptions: new Map()
+    };
 
-        // Get appointment information with doctor details
-        const appointments = await Appointment.find({ patientId: patient.patientId })
-          .populate('doctorId', 'profile doctorDetails')
-          .sort({ scheduledDate: -1 })
-          .limit(10)
-          .lean();
+    if (patients.length > 0) {
+      const lookupStart = Date.now();
+      
+      // Extract unique IDs with Set for deduplication
+      const uniqueIds = {
+        labs: [...new Set([labId])],
+        users: [...new Set([
+          ...patients.map(p => p.assignedBy?.toString()).filter(Boolean),
+          ...patients.flatMap(p => p.assignment?.doctorId?.toString()).filter(Boolean)
+        ])],
+        appointments: [...new Set(patients.flatMap(p => 
+          (p.appointments?.list || []).map(apt => apt.appointmentObjectId?.toString()).filter(Boolean)
+        ))],
+        prescriptions: [...new Set(patients.flatMap(p => 
+          (p.prescriptions?.list || []).map(presc => presc.prescriptionId?.toString()).filter(Boolean)
+        ))]
+      };
 
-        // Enhanced appointment processing
-        const appointmentsWithDoctorNames = appointments.map(apt => ({
-          ...apt,
-          doctorName: apt.doctorId ? 
-            `Dr. ${apt.doctorId.profile?.firstName || ''} ${apt.doctorId.profile?.lastName || ''}`.trim() : 
-            'Unknown Doctor'
-        }));
+      // 🔥 PARALLEL: Optimized batch lookups
+      const lookupPromises = [];
 
-        // Get last appointment details
-        const lastAppointment = appointmentsWithDoctorNames.length > 0 ? appointmentsWithDoctorNames[0] : null;
-        
-        // Get last completed/reported appointment
-        const reportedAppointment = appointmentsWithDoctorNames.find(apt => 
-          apt.status === 'Completed' || apt.status === 'Reported'
+      // Lab lookup
+      if (uniqueIds.labs.length > 0) {
+        lookupPromises.push(
+          Lab.find({ labId: { $in: uniqueIds.labs } })
+            .select('labId labName contactInfo')
+            .lean()
+            .then(results => ({ type: 'labs', data: results }))
         );
+      }
 
-        // Calculate comprehensive appointment stats
-        const appointmentStats = {
-          totalAppointments: appointments.length,
-          completedAppointments: appointments.filter(apt => apt.status === 'Completed').length,
-          cancelledAppointments: appointments.filter(apt => apt.status === 'Cancelled').length,
-          reportedAppointments: appointments.filter(apt => apt.status === 'Reported').length,
-          
-          // Last appointment details
-          lastAppointmentDate: lastAppointment?.scheduledDate || null,
-          lastAppointmentDoctor: lastAppointment?.doctorName || null,
-          lastAppointmentStatus: lastAppointment?.status || null,
-          
-          // Reported appointment details
-          reportedDate: reportedAppointment?.scheduledDate || reportedAppointment?.completedAt || null,
-          reportedBy: reportedAppointment?.doctorName || null,
-          reportedStatus: reportedAppointment?.status || null,
-          
-          // Next appointment
-          nextAppointmentDate: appointments.find(apt => 
-            apt.status === 'Scheduled' && new Date(apt.scheduledDate) > new Date()
-          )?.scheduledDate || null,
-          
-          // Last seen by
-          lastSeenBy: lastAppointment && lastAppointment.doctorId ? {
-            doctorId: lastAppointment.doctorId._id,
-            doctorName: lastAppointment.doctorName
-          } : null
-        };
-
-        // Build prescriptions array
-        let prescriptions = [];
-        
-        // Get from embedded list if present
-        if (patient.prescriptions && Array.isArray(patient.prescriptions.list) && patient.prescriptions.list.length) {
-          prescriptions = patient.prescriptions.list.map(p => ({
-            _id: p._id || p.prescriptionId,
-            prescriptionId: p.prescriptionId,
-            prescriptionCode: p.prescriptionCode,
-            doctorId: p.doctorId,
-            doctorName: p.doctorName || null,
-            visitId: p.visitId,
-            createdAt: p.prescribedDate || p.createdAt,
-            status: p.status,
-            medicines: p.medicines || p.medicineList || [],
-            tests: p.tests || [],
-            advice: p.advice || null,
-            source: 'embedded'
-          }));
-        }
-        
-        // Get from Prescription collection
-        const prescriptionsFromDB = await Prescription.find({ patientId: patient.patientId })
-          .sort({ createdAt: -1 })
-          .lean();
-          
-        const dbPrescriptions = prescriptionsFromDB.map(p => ({
-          _id: p._id,
-          prescriptionId: p.prescriptionId || p._id,
-          prescriptionCode: p.prescriptionCode,
-          doctorId: p.doctorId || p.doctor || null,
-          doctorName: p.doctorName || null,
-          visitId: p.visitId || p.currentVisitId,
-          createdAt: p.createdAt || p.prescribedDate,
-          status: p.status,
-          medicines: p.medicines || p.medicineList || [],
-          tests: p.tests || [],
-          advice: p.advice || null,
-          source: 'database'
-        }));
-        
-        // Merge and deduplicate prescriptions
-        const allPrescriptions = [...prescriptions, ...dbPrescriptions];
-        const uniquePrescriptions = allPrescriptions.reduce((acc, current) => {
-          const existing = acc.find(p => p._id?.toString() === current._id?.toString() || p.prescriptionId === current.prescriptionId);
-          if (!existing) {
-            acc.push(current);
-          }
-          return acc;
-        }, []);
-        
-        prescriptions = uniquePrescriptions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-        // Resolve doctor names for prescriptions
-        const unresolvedDocIds = Array.from(
-          new Set(
-            prescriptions
-              .filter(p => !p.doctorName && p.doctorId)
-              .map(p => String(p.doctorId))
-          )
+      // User lookup (for assignedBy and doctors)
+      if (uniqueIds.users.length > 0) {
+        lookupPromises.push(
+          User.find({ _id: { $in: uniqueIds.users.map(id => new mongoose.Types.ObjectId(id)) } })
+            .select('profile doctorDetails email role') // ✅ ADD: Include email and role
+            .lean()
+            .then(results => ({ type: 'users', data: results }))
         );
+      }
 
-        const doctorNameMap = {};
-        if (unresolvedDocIds.length) {
-          try {
-            const users = await User.find({ _id: { $in: unresolvedDocIds } })
-              .select('profile.firstName profile.lastName name doctorDetails')
-              .lean();
-            users.forEach(u => {
-              const id = String(u._id);
-              const name = u.profile
-                ? `Dr. ${u.profile.firstName || ''} ${u.profile.lastName || ''}`.trim()
-                : (u.name || 'Unknown Doctor');
-              if (name) doctorNameMap[id] = name;
-            });
-          } catch (e) {
-            console.error('Error resolving doctor names:', e);
+      // ✅ FIXED: Appointment lookup - doctorId should be populated with User
+      if (uniqueIds.appointments.length > 0) {
+        lookupPromises.push(
+          Appointment.find({ _id: { $in: uniqueIds.appointments.map(id => new mongoose.Types.ObjectId(id)) } })
+            .select('appointmentId scheduledDate scheduledTime status vitals chiefComplaints examination doctorId createdAt')
+            .populate('doctorId', 'profile doctorDetails email role') // ✅ FIXED: Populate User directly
+            .lean()
+            .then(results => ({ type: 'appointments', data: results }))
+        );
+      }
+
+      // Execute all lookups in parallel
+      const lookupResults = await Promise.allSettled(lookupPromises);
+      
+      // Process results and build maps
+      lookupResults.forEach(result => {
+        if (result.status === 'fulfilled') {
+          const { type, data } = result.value;
+          data.forEach(item => {
+            if (type === 'labs') {
+              lookupMaps[type].set(item.labId, item);
+            } else {
+              lookupMaps[type].set(item._id.toString(), item);
+            }
+          });
+        } else {
+          console.warn(`Lookup failed for ${result.reason}`);
+        }
+      });
+      
+      const lookupTime = Date.now() - lookupStart;
+      console.log(`🔍 Batch lookups completed in ${lookupTime}ms`);
+    }
+
+    // 🔥 STEP 5: Optimized formatting with comprehensive appointment data
+    const formatStart = Date.now();
+
+    const formattedPatients = patients.map(patient => {
+      // Get related data from maps
+      const lab = lookupMaps.labs.get(patient.labId);
+      const assignedByUser = lookupMaps.users.get(patient.assignedBy?.toString());
+
+      // ✅ FIXED: Process appointments with proper doctor name extraction
+      const appointmentsWithDetails = (patient.appointments?.list || []).map(aptRef => {
+        const appointment = lookupMaps.appointments.get(aptRef.appointmentObjectId?.toString());
+        if (!appointment) return { ...aptRef, appointmentDetails: null, _scheduleTs: 0 };
+
+        // ✅ Extract vitals description
+        const vitalsDescription = appointment.vitals ? [
+          appointment.vitals.weight?.value ? `Weight: ${appointment.vitals.weight.value}${appointment.vitals.weight.unit || ''}` : null,
+          appointment.vitals.bloodPressure?.systolic && appointment.vitals.bloodPressure?.diastolic ? 
+            `BP: ${appointment.vitals.bloodPressure.systolic}/${appointment.vitals.bloodPressure.diastolic}` : null,
+          appointment.vitals.temperature?.value ? `Temp: ${appointment.vitals.temperature.value}${appointment.vitals.temperature.unit || ''}` : null,
+          appointment.vitals.heartRate?.value ? `HR: ${appointment.vitals.heartRate.value}${appointment.vitals.heartRate.unit || ''}` : null
+        ].filter(Boolean).join(', ') : '';
+
+        // ✅ Extract chief complaints as description
+        const description = appointment.chiefComplaints?.primary ||
+                           (Array.isArray(appointment.chiefComplaints?.secondary) ? appointment.chiefComplaints.secondary.join(', ') : null) ||
+                           appointment.examination?.provisionalDiagnosis ||
+                           aptRef.description || 'No description available';
+
+        // ✅ FIXED: Compute scheduled timestamp for proper sorting
+        let scheduledTimestamp = 0;
+        try {
+          if (appointment.scheduledDate) {
+            const d = new Date(appointment.scheduledDate);
+            if (appointment.scheduledTime && typeof appointment.scheduledTime === 'string') {
+              const [hh, mm] = appointment.scheduledTime.split(':').map(v => parseInt(v, 10));
+              if (!Number.isNaN(hh)) {
+                d.setHours(hh, Number.isNaN(mm) ? 0 : mm, 0, 0);
+              }
+            }
+            scheduledTimestamp = d.getTime();
+          } else if (appointment.createdAt) {
+            scheduledTimestamp = new Date(appointment.createdAt).getTime();
+          } else if (aptRef.createdAt) {
+            scheduledTimestamp = new Date(aptRef.createdAt).getTime();
           }
+        } catch (e) {
+          console.warn('Error parsing appointment date:', e);
+          scheduledTimestamp = 0;
         }
 
-        prescriptions = prescriptions.map(p => ({
-          ...p,
-          doctorName: p.doctorName || (p.doctorId ? (doctorNameMap[String(p.doctorId)] || String(p.doctorId)) : 'Unknown Doctor')
-        }));
+        // ✅ FIXED: Simplified doctor name extraction from User model
+        let doctorName = 'Unknown Doctor';
+        
+        if (appointment.doctorId) {
+          // appointment.doctorId is populated User object directly
+          const user = appointment.doctorId;
+          
+          console.log('🔍 Doctor User object:', {
+            _id: user._id,
+            email: user.email,
+            role: user.role,
+            profile: user.profile,
+            doctorDetails: user.doctorDetails
+          });
+          
+          // Extract doctor name from User profile
+          if (user.profile?.firstName && user.profile?.lastName) {
+            doctorName = `Dr. ${user.profile.firstName} ${user.profile.lastName}`;
+          } else if (user.doctorDetails?.firstName && user.doctorDetails?.lastName) {
+            doctorName = `Dr. ${user.doctorDetails.firstName} ${user.doctorDetails.lastName}`;
+          } else if (user.email) {
+            // Fallback to email if no name available
+            doctorName = `Dr. ${user.email.split('@')[0]}`;
+          }
+        }
+        
+        // ✅ Fallback to aptRef.doctorName if available
+        if (doctorName === 'Unknown Doctor' && aptRef.doctorName) {
+          doctorName = aptRef.doctorName.startsWith('Dr.') ? aptRef.doctorName : `Dr. ${aptRef.doctorName}`;
+        }
+
+        // ✅ Format scheduled date and time
+        const scheduledDateTime = appointment.scheduledDate && appointment.scheduledTime ? 
+          `${new Date(appointment.scheduledDate).toLocaleDateString('en-IN')} ${appointment.scheduledTime}` : 
+          appointment.scheduledDate ? new Date(appointment.scheduledDate).toLocaleDateString('en-IN') : null;
+
+        console.log(`🔍 Appointment ${appointment.appointmentId}: Doctor ID = ${appointment.doctorId?._id}, Doctor Name = ${doctorName}, Scheduled: ${scheduledDateTime}`);
 
         return {
-          ...patient,
-          lab,
-          labName: lab?.labName || patient.labId,
-          currentVisit,
-          appointments: {
-            list: appointmentsWithDoctorNames,
-            stats: appointmentStats
-          },
-          prescriptions,
-          // Add direct access to appointment data for easier frontend access
-          lastAppointment: {
-            date: appointmentStats.lastAppointmentDate,
-            doctor: appointmentStats.lastAppointmentDoctor,
-            status: appointmentStats.lastAppointmentStatus
-          },
-          reportedDetails: {
-            date: appointmentStats.reportedDate,
-            by: appointmentStats.reportedBy,
-            status: appointmentStats.reportedStatus
+          ...aptRef,
+          _scheduleTs: scheduledTimestamp || 0, // ✅ Used for sorting
+          appointmentDetails: {
+            scheduledDate: appointment.scheduledDate,
+            scheduledTime: appointment.scheduledTime,
+            scheduledDateTime,
+            status: appointment.status,
+            description,
+            vitalsDescription,
+            vitals: appointment.vitals,
+            chiefComplaints: appointment.chiefComplaints,
+            examination: appointment.examination,
+            doctorName, // ✅ FIXED: Should now show correct doctor name
+            doctorId: appointment.doctorId?._id // ✅ ADD: Include doctor ID for reference
           }
         };
       })
-    );
+      // ✅ FIXED: Sort by scheduled timestamp (descending) - latest appointment first
+      .sort((a, b) => (b._scheduleTs || 0) - (a._scheduleTs || 0));
 
-    // Calculate stats using IST dates
-    const statusMatch = { ...query };
-    delete statusMatch.workflowStatus;
+      // Enhanced appointment stats
+      const enhancedAppointmentStats = {
+        ...patient.appointments?.stats,
+        totalAppointments: appointmentsWithDetails.length,
+        scheduledAppointments: appointmentsWithDetails.filter(apt => 
+          apt.appointmentDetails?.status === 'Scheduled' || apt.status === 'Scheduled'
+        ).length,
+        completedAppointments: appointmentsWithDetails.filter(apt => 
+          apt.appointmentDetails?.status === 'Completed' || apt.status === 'Completed'
+        ).length,
+        // Latest appointment with full details
+        latestAppointment: appointmentsWithDetails.length > 0 ? appointmentsWithDetails[0] : null
+      };
 
-    const statusCounts = await Patient.aggregate([
-      { $match: statusMatch },
-      {
-        $group: {
-          _id: '$workflowStatus',
-          count: { $sum: 1 }
+      return {
+        ...patient,
+        // Lab information
+        lab,
+        labName: lab?.labName || patient.labId,
+        
+        // Assignment information
+        assignedByUser,
+        assignedByName: assignedByUser ? 
+          `${assignedByUser.profile?.firstName || ''} ${assignedByUser.profile?.lastName || ''}`.trim() : 
+          null,
+
+        // ✅ Enhanced appointments with vitals and descriptions
+        appointments: {
+          list: appointmentsWithDetails,
+          stats: enhancedAppointmentStats
+        },
+
+        // ✅ Direct access fields for easier frontend consumption
+        latestAppointment: {
+          date: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.scheduledDate,
+          time: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.scheduledTime,
+          dateTime: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.scheduledDateTime,
+          doctor: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.doctorName,
+          status: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.status,
+          description: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.description,
+          vitalsDescription: enhancedAppointmentStats.latestAppointment?.appointmentDetails?.vitalsDescription
+        },
+
+        // Enhanced prescription information
+        prescriptions: patient.prescriptions?.list || [],
+        prescriptionStats: patient.prescriptions?.stats || {},
+
+        // Formatted dates for display
+        registrationDateFormatted: patient.registrationDate ? 
+          new Date(patient.registrationDate).toLocaleString('en-GB', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }).replace(',', '') : 'N/A',
+
+        lastActivityFormatted: patient.lastActivity ? 
+          new Date(patient.lastActivity).toLocaleString('en-GB', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }).replace(',', '') : 'N/A'
+      };
+    });
+
+    const formatTime = Date.now() - formatStart;
+
+    // 🔥 STEP 6: Calculate optimized stats with aggregation
+    const statsStart = Date.now();
+    
+    const statusMatch = { labId };
+    if (filterStartDate || filterEndDate) {
+      const dateRange = {};
+      if (filterStartDate) dateRange.$gte = filterStartDate;
+      if (filterEndDate) dateRange.$lte = filterEndDate;
+      statusMatch.registrationDate = dateRange;
+    }
+
+    // Parallel stats calculation
+    const [statusStats, timeStats] = await Promise.allSettled([
+      Patient.aggregate([
+        { $match: statusMatch },
+        { $group: { _id: '$workflowStatus', count: { $sum: 1 } } }
+      ]),
+      Patient.aggregate([
+        { $match: { labId } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            today: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gte: ['$registrationDate', filterStartDate] },
+                      { $lte: ['$registrationDate', filterEndDate] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
         }
-      }
-    ]);
-
-    // Time-based counts using IST
-    const timeBaseMatch = { ...query };
-    delete timeBaseMatch.workflowStatus;
-    delete timeBaseMatch.registrationDate;
-
-    const todayRange = getISTDateRange('today');
-    const yesterdayRange = getISTDateRange('yesterday');
-    const weekRange = getISTDateRange('week');
-    const monthRange = getISTDateRange('month');
-
-    const [countAllTime, countToday, countYesterday, countWeek, countMonth] = await Promise.all([
-      Patient.countDocuments(timeBaseMatch),
-      Patient.countDocuments({ ...timeBaseMatch, registrationDate: { $gte: todayRange.start, $lte: todayRange.end } }),
-      Patient.countDocuments({ ...timeBaseMatch, registrationDate: { $gte: yesterdayRange.start, $lte: yesterdayRange.end } }),
-      Patient.countDocuments({ ...timeBaseMatch, registrationDate: { $gte: weekRange.start, $lte: weekRange.end } }),
-      Patient.countDocuments({ ...timeBaseMatch, registrationDate: { $gte: monthRange.start, $lte: monthRange.end } })
+      ])
     ]);
 
     const stats = {
-      total: total,
-      all: countAllTime,
-      today: countToday,
-      yesterday: countYesterday,
-      week: countWeek,
-      month: countMonth,
+      total: totalPatients,
+      today: timeStats.status === 'fulfilled' && timeStats.value[0] ? timeStats.value[0].today : 0,
       pending: 0,
       inprogress: 0,
       completed: 0,
-      new: 0,
-      assigned: 0,
-      doctorOpened: 0,
-      reported: 0,
-      revisited: 0,
       // Add IST timestamp for frontend reference
-      istTimestamp: getISTDate().toISOString(),
-      istTime: getISTDate().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      istTimestamp: new Date(Date.now() + IST_OFFSET).toISOString(),
+      istTime: new Date(Date.now() + IST_OFFSET).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
     };
 
-    statusCounts.forEach(item => {
-      const status = item._id;
-      const count = item.count;
-      if (!status) return;
-      const statusKey = status.toLowerCase().replace(/\s+/g, '');
-      stats[statusKey] = count;
+    if (statusStats.status === 'fulfilled') {
+      statusStats.value.forEach(item => {
+        const status = item._id;
+        const count = item.count;
+        if (!status) return;
 
-      if (['New', 'Assigned', 'Revisited'].includes(status)) {
-        stats.pending += count;
-      } else if (['Doctor Opened', 'In Progress', 'Reported'].includes(status)) {
-        stats.inprogress += count;
-      } else if (['Completed'].includes(status)) {
-        stats.completed += count;
-      }
-    });
+        if (['New', 'Assigned', 'Revisited'].includes(status)) {
+          stats.pending += count;
+        } else if (['Doctor Opened', 'In Progress', 'Reported'].includes(status)) {
+          stats.inprogress += count;
+        } else if (['Completed'].includes(status)) {
+          stats.completed += count;
+        }
+      });
+    }
 
-    console.log('Found patients:', patientsWithVisitsAndLabs.length);
-    console.log('Total count:', total);
-    console.log('Date filter applied:', dateFilter);
-    console.log('Final stats:', stats);
+    const statsTime = Date.now() - statsStart;
+    const processingTime = Date.now() - startTime;
 
-    const response = {
-      data: patientsWithVisitsAndLabs,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalCount: total,
-        limit: parseInt(limit)
+    console.log(`✅ Formatting completed in ${formatTime}ms`);
+    console.log(`📊 Stats calculated in ${statsTime}ms`);
+    console.log(`🎯 Total processing time: ${processingTime}ms for ${formattedPatients.length} patients`);
+
+    // Enhanced response format
+    const responseData = {
+      success: true,
+      data: {
+        data: formattedPatients,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalPatients / limit),
+          totalCount: totalPatients,
+          limit: limit,
+          hasNextPage: (page * limit) < totalPatients,
+          hasPrevPage: page > 1,
+          recordRange: {
+            start: skip + 1,
+            end: skip + formattedPatients.length
+          }
+        },
+        stats,
+        filters: {
+          dateFilter,
+          workflowStatus,
+          search,
+          status
+        }
       },
-      stats,
-      filters: {
-        dateFilter,
-        workflowStatus,
-        search,
-        status
+      performance: {
+        queryTime: processingTime,
+        fromCache: false,
+        recordsReturned: formattedPatients.length,
+        requestedLimit: limit,
+        actualReturned: formattedPatients.length,
+        breakdown: {
+          coreQuery: queryTime,
+          lookups: `${Date.now() - formatStart}ms`,
+          formatting: formatTime,
+          stats: statsTime
+        }
+      },
+      metadata: {
+        dateRange: {
+          from: filterStartDate,
+          to: filterEndDate
+        },
+        labId,
+        istOffset: IST_OFFSET
       }
     };
 
     console.log('=== GET CLINIC PATIENTS REQUEST END ===');
-    sendSuccess(res, response, 'Patients retrieved successfully');
+    sendSuccess(res, responseData.data, 'Patients retrieved successfully');
 
   } catch (error) {
     console.error('=== GET CLINIC PATIENTS ERROR ===');
@@ -458,7 +675,6 @@ export const getAllPatients = async (req, res) => {
     sendError(res, 'Error fetching patients', 500, error.message);
   }
 };
-
 // @desc    Get clinic dashboard stats
 // @route   GET /api/clinic/dashboard-stats
 // @access  Private (Clinic only)

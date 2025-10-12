@@ -1,5 +1,6 @@
 import Lab from '../modals/Lab.js';
 import User from '../modals/User.js';
+import { TermsAndConditions, TermsAcceptance } from '../modals/TermsAndConditions.js';
 import { sendSuccess, sendError } from '../utils/helpers.js';
 import { validateRequired } from '../utils/helpers.js';
 import bcrypt from 'bcryptjs';
@@ -277,7 +278,7 @@ export const createDoctor = async (req, res) => {
   console.log('Request body:', JSON.stringify(req.body, null, 2));
 
   try {
-    const { email, password, profile, doctorDetails } = req.body;
+    const { email, password, profile, doctorDetails, termsAcceptance } = req.body;
 
     // Validate required fields
     const missing = validateRequired(['email', 'password', 'profile', 'doctorDetails'], req.body);
@@ -303,6 +304,12 @@ export const createDoctor = async (req, res) => {
       return sendError(res, `Missing doctor details: ${doctorMissing.join(', ')}`, 400);
     }
 
+    // ✅ NEW: Validate terms acceptance
+    if (!termsAcceptance || !termsAcceptance.termsId) {
+      console.log('Terms acceptance missing');
+      return sendError(res, 'Terms and conditions must be accepted', 400);
+    }
+
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
@@ -310,8 +317,16 @@ export const createDoctor = async (req, res) => {
       return sendError(res, 'Email already registered', 400);
     }
 
-   
-    // Create doctor user
+    // ✅ NEW: Verify terms exist and are active
+    const terms = await TermsAndConditions.findById(termsAcceptance.termsId);
+    if (!terms || !terms.isActive) {
+      console.log('Invalid or inactive terms');
+      return sendError(res, 'Invalid terms and conditions', 400);
+    }
+
+    console.log('Terms validation passed:', terms.version);
+
+    // Create doctor user first
     const doctor = await User.create({
       email: email.toLowerCase(),
       password: password,
@@ -320,20 +335,61 @@ export const createDoctor = async (req, res) => {
       doctorDetails: {
         ...doctorDetails,
         registrationDate: new Date(),
-        isVerified: false
+        isVerified: false,
+        termsVersion: terms.version,
+        termsAcceptedAt: new Date()
       },
       isActive: true,
       registrationComplete: true
     });
 
+    console.log('Doctor created successfully with MongoDB ID:', doctor._id);
+
+    // ✅ UPDATED: Create terms acceptance record with MongoDB ID as doctorId
+    const acceptance = await TermsAcceptance.create({
+      userId: doctor._id,
+      doctorId: doctor._id.toString(), // ✅ Use MongoDB ID as doctor ID
+      termsVersion: terms.version,
+      termsId: terms._id,
+      acceptedAt: new Date(),
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'],
+      signature: {
+        formSignature: doctorDetails.signature?.image, // From step 4 form
+        termsSignature: termsAcceptance.signature, // From terms modal
+        timestamp: new Date()
+      },
+      acknowledgments: termsAcceptance.acknowledgments,
+      // ✅ Enhanced doctor info with MongoDB ID
+      doctorInfo: {
+        doctorId: doctor._id.toString(), // ✅ MongoDB ID as doctor ID
+        name: `Dr. ${profile.firstName} ${profile.lastName}`,
+        email: email.toLowerCase(),
+        specialization: doctorDetails.specialization,
+        registrationNumber: doctorDetails.registrationNumber,
+        mongoId: doctor._id // ✅ Also store as mongoId for clarity
+      }
+    });
+
+    console.log('Terms acceptance recorded with doctor ID:', acceptance.doctorId);
+
+    // ✅ Update doctor with terms acceptance reference
+    doctor.doctorDetails.termsAcceptance = acceptance._id;
+    await doctor.save();
+
+    console.log('Doctor updated with terms acceptance reference');
+
     // Remove password from response
     const doctorObj = doctor.toObject();
     delete doctorObj.password;
 
-    console.log('Doctor created successfully:', doctor.email);
     console.log('=== CREATE DOCTOR REQUEST END ===');
 
-    sendSuccess(res, doctorObj, 'Doctor created successfully', 201);
+    sendSuccess(res, {
+      doctor: doctorObj,
+      termsAcceptance: acceptance,
+      doctorId: doctor._id.toString() // ✅ Return MongoDB ID as doctor ID
+    }, 'Doctor created successfully', 201);
   } catch (error) {
     console.error('=== CREATE DOCTOR ERROR ===');
     console.error('Error:', error);

@@ -8,7 +8,8 @@ import {
 import {
   getDoctorAppointments,
   getDoctorAppointmentsByPatient,
-  updateDoctorAppointmentStatus
+  updateDoctorAppointmentStatus,
+  getAppointmentDetails
 } from '../controllers/doctorappointment.controller.js';
 
 const router = express.Router();
@@ -17,9 +18,10 @@ const router = express.Router();
 router.use(protect);
 router.use(authorize('doctor'));
 
-// ✅ NEW: Appointment routes
+// Appointment routes
 router.get('/appointments', getDoctorAppointments);
 router.get('/appointments/patient/:patientId', getDoctorAppointmentsByPatient);
+router.get('/appointments/:appointmentId/details', getAppointmentDetails);
 router.put('/appointments/:appointmentId/status', updateDoctorAppointmentStatus);
 
 // Patient routes (kept for backward compatibility)
