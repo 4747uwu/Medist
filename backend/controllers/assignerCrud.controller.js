@@ -408,7 +408,10 @@ export const getDoctors = async (req, res) => {
   try {
     const { search, isActive, specialization, page = 1, limit = 50 } = req.query;
 
-    let query = { role: 'doctor' };
+    let query = { 
+      role: { $in: ['doctor'] }, // ✅ Include both doctor types
+      isActive: true 
+    };
 
     // Filter by active status
     if (isActive !== undefined) {
@@ -443,17 +446,23 @@ export const getDoctors = async (req, res) => {
     ]);
 
     console.log('Doctors retrieved:', doctors.length, 'Total:', total);
+    
+    // ✅ Log the first doctor to verify structure
+    if (doctors.length > 0) {
+      console.log('Sample doctor:', {
+        id: doctors[0]._id,
+        name: `${doctors[0].profile?.firstName} ${doctors[0].profile?.lastName}`,
+        email: doctors[0].email,
+        role: doctors[0].role,
+        specialization: doctors[0].doctorDetails?.specialization
+      });
+    }
+    
     console.log('=== GET DOCTORS REQUEST END ===');
 
-    sendSuccess(res, {
-      data: doctors,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalItems: total,
-        itemsPerPage: parseInt(limit)
-      }
-    }, 'Doctors retrieved successfully');
+    // ✅ FIX: Send doctors array directly in 'data' field (not nested)
+    sendSuccess(res, doctors, 'Doctors retrieved successfully');
+    
   } catch (error) {
     console.error('=== GET DOCTORS ERROR ===');
     console.error('Error:', error);

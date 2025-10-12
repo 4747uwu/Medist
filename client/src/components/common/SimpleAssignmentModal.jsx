@@ -25,10 +25,29 @@ const SimpleAssignmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
   const fetchDoctors = async () => {
     try {
       setLoading(true);
+      setError(''); // ✅ Clear previous errors
+      
       const response = await apiClient.get('/assigner/doctors');
-      setDoctors(response.data?.data || []);
+      console.log('SimpleAssignmentModal - Full response:', response.data);
+      
+      // ✅ FIX: Extract doctors correctly
+      let doctorsData = [];
+      
+      if (response.data.success) {
+        doctorsData = response.data.data; // ✅ Based on your backend response
+      }
+      
+      if (Array.isArray(doctorsData)) {
+        setDoctors(doctorsData);
+        console.log('SimpleAssignmentModal - Doctors set:', doctorsData.length);
+      } else {
+        setDoctors([]);
+        setError('No doctors available');
+      }
+      
     } catch (error) {
-      console.error('Error fetching doctors:', error);
+      console.error('SimpleAssignmentModal - Error fetching doctors:', error);
+      setDoctors([]);
       setError('Failed to load doctors');
     } finally {
       setLoading(false);
