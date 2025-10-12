@@ -35,7 +35,9 @@ app.use(cors({
     'http://157.245.86.199',        // Frontend domain
     'http://157.245.86.199:80',     // Frontend with port
     'http://localhost:5173',        // Local development
-    'http://localhost:3000'         // Alternative local port
+    'http://localhost:3000',
+     'http://159.203.168.110'
+             // Alternative local port
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
