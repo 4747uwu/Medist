@@ -10,9 +10,12 @@ import CreateDoctorModal from '../../components/assigner/CreateDoctorModal';
 import CreatePatientModal from '../../components/assigner/CreatePatientModal';
 import usePagination from '../../hooks/usePagination';
 import { apiClient } from '../../services/api';
+import { useNavigate } from 'react-router-dom';
+// import DoctorManagement from './pages/assigner/DoctorManagement';
 
 const AssignerDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState('today');
@@ -313,7 +316,17 @@ const AssignerDashboard = () => {
                   <span>Auto </span>
                 </button>
 
-               
+                {/* Manage Doctors Button - New */}
+                <button
+                  onClick={() => navigate('/doctor-management')}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors"
+                  title="Manage Doctors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  <span>Manage Doctors</span>
+                </button>
               </div>
             </div>
           </div>

@@ -278,7 +278,13 @@ export const createDoctor = async (req, res) => {
   console.log('Request body:', JSON.stringify(req.body, null, 2));
 
   try {
-    const { email, password, profile, doctorDetails, termsAcceptance } = req.body;
+    const { 
+      email, 
+      password, 
+      profile, 
+      doctorDetails, 
+      termsAcceptance
+    } = req.body;
 
     // Validate required fields
     const missing = validateRequired(['email', 'password', 'profile', 'doctorDetails'], req.body);
@@ -304,12 +310,6 @@ export const createDoctor = async (req, res) => {
       return sendError(res, `Missing doctor details: ${doctorMissing.join(', ')}`, 400);
     }
 
-    // ✅ NEW: Validate terms acceptance
-    if (!termsAcceptance || !termsAcceptance.termsId) {
-      console.log('Terms acceptance missing');
-      return sendError(res, 'Terms and conditions must be accepted', 400);
-    }
-
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
@@ -317,20 +317,20 @@ export const createDoctor = async (req, res) => {
       return sendError(res, 'Email already registered', 400);
     }
 
-    // ✅ NEW: Verify terms exist and are active
-    const terms = await TermsAndConditions.findById(termsAcceptance.termsId);
-    if (!terms || !terms.isActive) {
-      console.log('Invalid or inactive terms');
-      return sendError(res, 'Invalid terms and conditions', 400);
+    // Get active terms for validation
+    const terms = await TermsAndConditions.findOne({ isActive: true }).sort({ createdAt: -1 });
+    if (!terms) {
+      console.log('No active terms found');
+      return sendError(res, 'No active terms and conditions found', 400);
     }
 
     console.log('Terms validation passed:', terms.version);
 
-    // Create doctor user first
-    const doctor = await User.create({
+    // Create doctor user - ONLY 'doctor' role
+    const doctorData = {
       email: email.toLowerCase(),
       password: password,
-      role: 'doctor',
+      role: 'doctor', // ✅ Fixed to only 'doctor'
       profile,
       doctorDetails: {
         ...doctorDetails,
@@ -341,39 +341,45 @@ export const createDoctor = async (req, res) => {
       },
       isActive: true,
       registrationComplete: true
-    });
+    };
+
+    const doctor = await User.create(doctorData);
 
     console.log('Doctor created successfully with MongoDB ID:', doctor._id);
 
-    // ✅ UPDATED: Create terms acceptance record with MongoDB ID as doctorId
+    // Create terms acceptance record
     const acceptance = await TermsAcceptance.create({
       userId: doctor._id,
-      doctorId: doctor._id.toString(), // ✅ Use MongoDB ID as doctor ID
+      doctorId: doctor._id.toString(),
       termsVersion: terms.version,
       termsId: terms._id,
       acceptedAt: new Date(),
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.headers['user-agent'],
       signature: {
-        formSignature: doctorDetails.signature?.image, // From step 4 form
-        termsSignature: termsAcceptance.signature, // From terms modal
+        formSignature: doctorDetails.signature?.image,
+        termsSignature: termsAcceptance?.signature,
         timestamp: new Date()
       },
-      acknowledgments: termsAcceptance.acknowledgments,
-      // ✅ Enhanced doctor info with MongoDB ID
+      acknowledgments: termsAcceptance?.acknowledgments || {
+        readAndUnderstood: true,
+        acceptsFullResponsibility: true,
+        authorizesVerification: true,
+        understandsBindingNature: true
+      },
       doctorInfo: {
-        doctorId: doctor._id.toString(), // ✅ MongoDB ID as doctor ID
+        doctorId: doctor._id.toString(),
         name: `Dr. ${profile.firstName} ${profile.lastName}`,
         email: email.toLowerCase(),
         specialization: doctorDetails.specialization,
         registrationNumber: doctorDetails.registrationNumber,
-        mongoId: doctor._id // ✅ Also store as mongoId for clarity
+        mongoId: doctor._id
       }
     });
 
     console.log('Terms acceptance recorded with doctor ID:', acceptance.doctorId);
 
-    // ✅ Update doctor with terms acceptance reference
+    // Update doctor with terms acceptance reference
     doctor.doctorDetails.termsAcceptance = acceptance._id;
     await doctor.save();
 
@@ -388,7 +394,7 @@ export const createDoctor = async (req, res) => {
     sendSuccess(res, {
       doctor: doctorObj,
       termsAcceptance: acceptance,
-      doctorId: doctor._id.toString() // ✅ Return MongoDB ID as doctor ID
+      doctorId: doctor._id.toString()
     }, 'Doctor created successfully', 201);
   } catch (error) {
     console.error('=== CREATE DOCTOR ERROR ===');
@@ -409,7 +415,7 @@ export const getDoctors = async (req, res) => {
     const { search, isActive, specialization, page = 1, limit = 50 } = req.query;
 
     let query = { 
-      role: { $in: ['doctor'] }, // ✅ Include both doctor types
+      role: 'doctor', // ✅ Only 'doctor' role, removed jrdoctor
       isActive: true 
     };
 
@@ -447,7 +453,6 @@ export const getDoctors = async (req, res) => {
 
     console.log('Doctors retrieved:', doctors.length, 'Total:', total);
     
-    // ✅ Log the first doctor to verify structure
     if (doctors.length > 0) {
       console.log('Sample doctor:', {
         id: doctors[0]._id,
@@ -460,7 +465,6 @@ export const getDoctors = async (req, res) => {
     
     console.log('=== GET DOCTORS REQUEST END ===');
 
-    // ✅ FIX: Send doctors array directly in 'data' field (not nested)
     sendSuccess(res, doctors, 'Doctors retrieved successfully');
     
   } catch (error) {
@@ -480,8 +484,10 @@ export const getDoctorById = async (req, res) => {
   console.log('Doctor ID:', req.params.id);
 
   try {
-    const doctor = await User.findOne({ _id: req.params.id, role: 'doctor' })
-      .select('-password');
+    const doctor = await User.findOne({ 
+      _id: req.params.id, 
+      role: 'doctor' // ✅ Only 'doctor' role
+    }).select('-password');
 
     if (!doctor) {
       console.log('Doctor not found');
@@ -515,8 +521,13 @@ export const updateDoctor = async (req, res) => {
       delete req.body.password;
     }
 
+    // Don't allow role changes
+    if (req.body.role) {
+      delete req.body.role;
+    }
+
     const doctor = await User.findOneAndUpdate(
-      { _id: req.params.id, role: 'doctor' },
+      { _id: req.params.id, role: 'doctor' }, // ✅ Only 'doctor' role
       req.body,
       { new: true, runValidators: true }
     ).select('-password');
@@ -547,7 +558,10 @@ export const deleteDoctor = async (req, res) => {
   console.log('Doctor ID:', req.params.id);
 
   try {
-    const doctor = await User.findOneAndDelete({ _id: req.params.id, role: 'doctor' });
+    const doctor = await User.findOneAndDelete({ 
+      _id: req.params.id, 
+      role: 'doctor' // ✅ Only 'doctor' role
+    });
 
     if (!doctor) {
       console.log('Doctor not found');

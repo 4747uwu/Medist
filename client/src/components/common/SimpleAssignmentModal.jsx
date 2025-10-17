@@ -179,7 +179,7 @@ const SimpleAssignmentModal = ({ isOpen, onClose, patient, onSuccess }) => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Assignment Notes
+                Assignment Notes & Meet Links
               </label>
               <textarea
                 value={notes}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../services/api';
+import GoogleMeetModal from './googleMeetModal';
 
-const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess }) => {
+const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess, user }) => {
   // ✅ FIX: Initialize doctors as empty array to prevent map error
   const [doctors, setDoctors] = useState([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
@@ -9,6 +10,8 @@ const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess })
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [showGoogleMeetModal, setShowGoogleMeetModal] = useState(false);
+  const [meetingData, setMeetingData] = useState(null);
 
   // Check if appointment is already assigned
   const isAssigned = appointment?.assignment?.doctorId || appointment?.doctorId;
@@ -122,6 +125,24 @@ const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess })
     }
   };
 
+  // Add this function to check for existing meeting
+  const checkExistingMeeting = async () => {
+    try {
+      const result = await googleMeetService.getMeetingForAppointment(appointment?.appointmentId);
+      setMeetingData(result.data.meetingData);
+    } catch (error) {
+      // No meeting exists, which is fine
+      setMeetingData(null);
+    }
+  };
+
+  // Call this in useEffect
+  useEffect(() => {
+    if (isOpen && appointment) {
+      checkExistingMeeting();
+    }
+  }, [isOpen, appointment]);
+
   // ✅ Don't render if not open
   if (!isOpen) return null;
 
@@ -223,8 +244,8 @@ const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess })
               />
             </div>
 
-            <div className="flex items-center justify-between pt-4">
-              <div>
+            <div className="flex items-center justify-between pt-4 border-t">
+              <div className="flex gap-3">
                 {isAssigned && (
                   <button
                     type="button"
@@ -235,6 +256,22 @@ const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess })
                     {submitting ? 'Unassigning...' : 'Unassign Doctor'}
                   </button>
                 )}
+                
+                {/* Google Meet button */}
+                <button
+                  type="button"
+                  onClick={() => setShowGoogleMeetModal(true)}
+                  className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
+                    meetingData 
+                      ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
+                      : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {meetingData ? 'Join Meeting' : 'Create Meeting'}
+                </button>
               </div>
               
               <div className="flex gap-3">
@@ -265,6 +302,20 @@ const AppointmentAssignmentModal = ({ isOpen, onClose, appointment, onSuccess })
           </form>
         </div>
       </div>
+
+      {/* Add the Google Meet Modal */}
+      {showGoogleMeetModal && (
+        <GoogleMeetModal
+          isOpen={showGoogleMeetModal}
+          onClose={() => setShowGoogleMeetModal(false)}
+          appointment={appointment}
+          onMeetingCreated={(newMeetingData) => {
+            setMeetingData(newMeetingData);
+            setShowGoogleMeetModal(false);
+          }}
+          userRole={user?.role}
+        />
+      )}
     </div>
   );
 };

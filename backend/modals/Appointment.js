@@ -264,6 +264,17 @@ const appointmentSchema = new mongoose.Schema({
       canEditPrescription: { type: Boolean, default: true }
     }
   },
+
+  googleMeet: {
+  spaceId: String,
+  meetingUri: String,
+  meetingCode: String,
+  createdAt: Date,
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+},
   
   // ✅ ADD: Comprehensive medical assessment fields
   investigations: {

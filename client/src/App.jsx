@@ -11,6 +11,8 @@ import PrescriptionPage from './pages/Doctor/PrescriptionPage.jsx';
 import PrescriptionHistoryPage from './pages/Doctor/PrescriptionHistoryPage.jsx';
 import ShowAppointmentDetails from './pages/Doctor/Appointment/showAppointmentDetails';
 import JrDoctorDashboard from './pages/jrDoctor/Dashboard';
+import DoctorManagement from './pages/assigner/DoctorManagement';
+
 
 // Protected Route Component (moved here)
 const ProtectedRoute = ({ children, requiredRole = null, allowedRoles = null }) => {
@@ -124,6 +126,16 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+
+              <Route 
+            path="/doctor-management" 
+            element={
+              <ProtectedRoute requiredRole="assigner">
+                <DoctorManagement />
+              </ProtectedRoute>
+            } 
+          />
+          
             
             {/* ✅ NEW: Jr Doctor Dashboard Route */}
             <Route 
